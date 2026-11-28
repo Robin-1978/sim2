@@ -34,6 +34,11 @@ export function renderAll() {
     renderEnding();
     renderTalkTargets();
     renderPeople();
+    if (state.selectedCharacter) {
+      const resident = nearbyParticipants().find((person) => person.id === state.selectedCharacter.id);
+      if (resident) updateCharacterSheet(resident);
+      else closeCharacter();
+    }
     renderTaskHint();
     $("last-update").textContent = `同步于 ${new Date().toLocaleTimeString("zh-CN", { hour12: false })}`;
   }
@@ -138,7 +143,7 @@ export function wireUi() {
 
     $("talk-form").addEventListener("submit", (event) => {
       event.preventDefault();
-      sendDialogue(event.currentTarget);
+      sendDialogue();
     });
     $("talk-target").addEventListener("change", () => {
       const person = nearbyParticipants().find((item) => item.id === $("talk-target").value);

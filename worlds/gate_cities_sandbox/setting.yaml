@@ -22,6 +22,57 @@ ui:
     shop_fabricate_paving: 卖出两份路石，工坊收到三枚钱
     shop_pay_dividend: 已领取一枚分红
     shop_pave_market_road: 坊市到水庭的短路开通
+  resident_actions:
+    travel_to: 赶路
+    relief_path_first: 为农圃修第一段近路
+    relief_path_finish: 为农圃打通第二段近路
+    wait: 在这儿歇脚
+    work_low: 在低城上工
+    work_yard: 在旧站当班
+    shop_fabricate_paving: 在工坊打制路石
+    shop_purchase_ore: 在灰脊采购矿料
+    shop_receive_ore: 往坊市仓里卸矿料
+    crew_supper: 在工坊长桌吃饭
+    tender_buy_ore: 在灰脊为合同备矿
+    tender_unload_ore: 在坊市卸下合同矿料
+    tender_pack_stones: 在工坊制石装箱
+    tender_load_stones: 装车送往旧站
+    tender_yard_advance: 在旧站验收第一箱路石
+    tender_yard_payment: 在旧站验收并收货款
+    tender_court_advance: 制作水庭的第一批路石
+    tender_court_payment: 给水庭制石并收货款
+    tender_hire: 在坊市领取工位津贴
+    cross_market_out: 从灰脊穿门去低城
+    cross_yard_out: 从灰脊穿门去旧站
+  city_watch:
+    signals:
+    - {place: 低城水庭, when: world.low_food <= 8, text: 公共饭食紧张，晚到的人可能领不到。}
+    - {place: 铁轨货场, when: world.yard_wages < 8, text: 旧站工钱见底，愿意接活的人还在等。}
+    - {place: 坊市工坊, when: world.shop_open == 1 and world.market_ore < 2, text: 工坊缺矿料，下一批路石要等入仓。}
+    - {place: 低城, when: world.shop_road == 1, text: 坊市到水庭的新路只需两分钟。}
+    - {place: 灰脊, when: world.lockdown == 1, text: 货门限行已生效，跨城货运须另找陆路。}
+    - {place: 坊市工坊, when: world.crew_table == 1, text: 工坊晚班有地方坐下来吃饭了。}
+    events:
+      gatebuild.resident_moved: 有人搬进了低城
+      gatebuild.appointed: 工人接任新岗位
+      gatebuild.opened: 新的门线贯通
+      gatebuild.agreement: 城市改签通行约定
+      gatebuild.shop_road_opened: 坊市短路竣工
+      gatebuild.crew_table: 工人在坊市支起长桌
+      gatebuild.tender_signed: 工坊签下采购合同
+      gatebuild.tender_hired: 工人从旧站来到坊市
+      gatebuild.tender_delivery: 新合同交货
+      gatebuild.tender_closed: 工坊完成合同
+      gatebuild.tender_public_work: 城里用上了新路石
+      gatebuild.relief_open: 水庭筹到本轮粮食
+      gatebuild.relief_handout: 水庭开了公粮锅
+      gatebuild.relief_path_commissioned: 低城发出两班修路委托
+      gatebuild.relief_path_open: 农圃近路通了
+      gatebuild.relief_supply: 供粮契约再次履行
+      gatebuild.relief_path_supply: 近路完成一笔补给
+      gatebuild.relief_charter: 水庭议事已有结果
+      gatebuild.relief_path_use: 新路旁有了生意
+      story.beat.activated: 城市有了新的进展
   chronicle_events:
   - world.created
   - gatebuild.opening
@@ -42,6 +93,20 @@ ui:
   - gatebuild.shop_batch_sold
   - gatebuild.shop_dividend
   - gatebuild.shop_road_opened
+  - gatebuild.crew_table
+  - gatebuild.tender_signed
+  - gatebuild.tender_hired
+  - gatebuild.tender_delivery
+  - gatebuild.tender_closed
+  - gatebuild.tender_public_work
+  - gatebuild.relief_open
+  - gatebuild.relief_handout
+  - gatebuild.relief_path_commissioned
+  - gatebuild.relief_path_open
+  - gatebuild.relief_supply
+  - gatebuild.relief_path_supply
+  - gatebuild.relief_charter
+  - gatebuild.relief_path_use
   - story.beat.activated
   - story.beat.completed
   - entity.created
@@ -62,7 +127,54 @@ ui:
     - {label: 已结订单, property: shop_batches, suffix: ' 批', show_when: shop_open}
     - {label: 接单入账, property: shop_sales, suffix: ' 枚', show_when: shop_open}
     - {label: 已付成本, property: shop_spent, suffix: ' 枚', show_when: shop_open}
+    - {label: 合同交货, property: tender_delivered, suffix: ' / 3', show_when: tender_mode}
+    - {label: 准时奖还剩, property: tender_minutes, suffix: ' 分钟', show_when: tender_mode}
+    - {label: 坊市待运, property: tender_yard_ready, suffix: ' 箱', show_when: tender_yard_ready}
+  decision_report:
+    show_when: relief_cases
+    hide_when: relief_phase
+    title: 上次议事已经结案
+    event_types: [gatebuild.relief_path_supply, gatebuild.relief_supply, gatebuild.relief_path_use, gatebuild.relief_path_open, gatebuild.relief_charter]
+    metrics:
+    - {label: 公粮, property: low_food, suffix: ' 份'}
+    - {label: 按约续供, property: relief_followups, suffix: ' 次'}
+    - {label: 修路完工, property: relief_path_shifts, suffix: ' / 2 班', show_when: relief_work}
+    - {label: 新路补给, property: relief_path_trades, suffix: ' 次', show_when: relief_path_use}
   spotlights:
+    relief_source:
+      desk: true
+      stage: 筹粮
+      blocker: 旧站需留十份饭。本地抢收需保留饮用水并备两份燃料。等公粮缺口改善前，也可以继续工坊业务。
+      metrics:
+      - {label: 低城公粮, property: low_food, suffix: ' 份'}
+      - {label: 旧站饭食, property: yard_food, suffix: ' 份'}
+      - {label: 低城薪金, property: low_wages, suffix: ' 枚'}
+      - {label: 低城净水, property: low_water, suffix: ' 份'}
+    relief_allocation:
+      desk: true
+      stage: 分粮
+      metrics:
+      - {label: 可拨储备, property: relief_food, suffix: ' 份'}
+      - {label: 低城公粮, property: low_food, suffix: ' 份'}
+    relief_charter:
+      desk: true
+      stage: 立约
+      metrics:
+      - {label: 剩余储备, property: relief_food, suffix: ' 份'}
+      - {label: 农圃水量, property: farm_water, suffix: ' 份'}
+      - {label: 低城薪金, property: low_wages, suffix: ' 枚'}
+      - {label: 已修, property: relief_path_shifts, suffix: ' / 2 班', show_when: relief_work}
+    relief_followup:
+      desk: true
+      stage: 新路经营
+      metrics:
+      - {label: 水庭净水, property: low_water, suffix: ' 份'}
+      - {label: 工坊周转金, property: shop_cash, suffix: ' 枚'}
+      - {label: 旧站矿料, property: yard_ore, suffix: ' 份'}
+    tender_offer: {blocker: 水庭须预留十枚，旧站须有两枚工钱和十枚公共基金。查看公共账上的资金。}
+    tender_active: {blocker: 先等正在路上的居民交货。没有货时，查工坊周转金和灰脊矿仓。}
+    tender_final: {}
+    tender_works: {}
     fix_market_yard: {}
     fix_yard_market: {}
     survey: {}

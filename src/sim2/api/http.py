@@ -261,6 +261,7 @@ class ControlHTTPServer(ThreadingHTTPServer):
         )
         self.operator_token = str(operator_token or os.environ.get("SIM2_OPERATOR_TOKEN") or secrets.token_urlsafe(32))
         self._sessions: dict[str, dict[str, str]] = {}
+        self.session_generation = secrets.token_hex(12)
         self._idem_lock = RLock()
         self._idem_store: dict[tuple[str, str], dict[str, Any]] = {}
         self._closed = False
@@ -427,6 +428,13 @@ class ControlHTTPServer(ThreadingHTTPServer):
                 result["instances"] = self.registry.list(active_db=self.database_path)
             return result
 
+    def player_entry(self) -> dict[str, Any]:
+        with self._control_lock:
+            entry = self.control.player_entry() if self.control else {"status": "no_world"}
+            version = self.control.platform.store.repositories.metadata.get("config_version", "") if self.control else ""
+            return {**entry, "instance_id": self.instance_id, "config_version": version,
+                    "session_generation": self.session_generation}
+
     def enter_player(self, body: dict[str, Any]) -> dict[str, Any]:
         with self._control_lock:
             if self.control is None:
@@ -450,6 +458,8 @@ class ControlHTTPServer(ThreadingHTTPServer):
                 result = {
                     **result,
                     "session_token": self.issue_session("player", player_id=player_id),
+                    "instance_id": self.instance_id,
+                    "session_generation": self.session_generation,
                 }
             return result
 

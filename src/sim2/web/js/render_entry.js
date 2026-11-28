@@ -46,9 +46,10 @@ export function renderEntry() {
     const startMinute = Number(world.world_clock?.start_minute || 0);
     const totalMinute = Number(world.world_minute || 0) + startMinute;
     const clock = formatClock({ minute_of_day: totalMinute % 1440, day: Math.floor(totalMinute / 1440) + 1, day_phase: "" });
+    const version = entry.config_version || state.runtime?.instance?.config_version;
     $("entry-world-state").textContent = noWorld
       ? "创建后会自动打开，并从这里继续。"
-      : `世界时间 ${clock.day} ${clock.time}`;
+      : `世界时间 ${clock.day} ${clock.time}${version ? ` · ${version}` : ""}`;
   }
 
 

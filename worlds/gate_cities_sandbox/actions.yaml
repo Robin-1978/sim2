@@ -2343,6 +2343,7 @@ actions:
   parameters: {}
   preconditions:
   - actor.alive
+  - world.tender_mode == 0
   - actor.state.location_id == 'low_market'
   - actor.role == 'player'
   - world.shop_open == 1
@@ -2380,6 +2381,7 @@ actions:
   parameters: {}
   preconditions:
   - actor.alive
+  - world.tender_mode == 0
   - actor.state.location_id == 'mine_exchange'
   - world.shop_open == 1
   - world.shop_cash >= 1
@@ -2472,6 +2474,7 @@ actions:
   parameters: {}
   preconditions:
   - actor.alive
+  - world.tender_mode == 0
   - actor.state.location_id == 'low_market'
   - world.shop_open == 1
   - world.market_ore >= 2
@@ -2539,6 +2542,7 @@ actions:
   parameters: {}
   preconditions:
   - actor.alive
+  - world.tender_mode == 0
   - actor.state.location_id == 'low_market'
   - actor.role == 'player'
   - world.shop_open == 1
@@ -2658,6 +2662,1116 @@ actions:
   failure:
     condition: actor.incapacitated
     result: interrupted
+  kind: atomic
+  executor: effect_pipeline
+  interrupt_policy: cancel
+  interaction_policy: allow
+
+- id: set_up_crew_table
+  version: 1
+  verb: build
+  description: 付两枚钱请作坊搭长桌。班组今后可用水庭饭食在工坊吃晚饭。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - actor.state.location_id == 'low_market'
+  - actor.role == 'player'
+  - world.crew_table == 0
+  - world.shop_open == 1
+  - world.low_wages <= 168
+  duration: {minutes: 10}
+  costs:
+    reserve: {coin: 2, crew_table_slot: 1}
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - {type: world_resource_delta, resource_id: low_wages, delta: 2}
+  - {type: relationship_delta, target_id: low_resident_03, relation: trust, delta: 0.2}
+  - {type: world_property_set, property: crew_table, value: 1}
+  - type: public_event
+    event: gatebuild.crew_table
+    summary: 坊市工坊添了一张长桌。晚班回来的人可以在工坊领饭。
+    data: {location_id: low_market}
+  success: {condition: actor.alive, result: set_up_crew_table}
+  failure: {condition: actor.incapacitated, result: interrupted}
+  kind: atomic
+  executor: effect_pipeline
+  interrupt_policy: cancel
+  interaction_policy: allow
+
+- id: crew_supper
+  version: 1
+  verb: eat
+  description: 在班组长桌吃饭，和同伴一起歇脚。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - actor.state.location_id == 'low_market'
+  - world.crew_table == 1
+  - world.low_food >= 4
+  - actor.need.satiety < 65
+  duration: {minutes: 6}
+  costs:
+    reserve: {low_food: 1}
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - {type: need_delta, need: satiety, delta: 55}
+  - {type: need_delta, need: belonging, delta: 14}
+  success: {condition: actor.alive, result: crew_supper}
+  failure: {condition: actor.incapacitated, result: interrupted}
+  kind: atomic
+  executor: effect_pipeline
+  interrupt_policy: cancel
+  interaction_policy: allow
+
+- id: sign_court_tender
+  version: 1
+  verb: authorize
+  description: 预付三枚，后两批每批三枚。就地验收，石料留给水庭。420 分钟内交齐，另付一枚。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - actor.state.location_id == 'low_market'
+  - actor.role == 'player'
+  - world.shop_road == 1
+  - world.tender_mode == 0
+  - world.shop_cash >= 1
+  - world.shop_cash <= 36
+  - world.court_tender_stones <= 12
+  - world.tender_sign_slot == 1
+  - world.low_wages >= 10
+  duration: {minutes: 4}
+  costs:
+    reserve: {low_wages: 10, tender_sign_slot: 1}
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - {type: world_resource_delta, resource_id: shop_cash, delta: 3}
+  - {type: world_resource_delta, resource_id: tender_escrow, delta: 6}
+  - {type: world_resource_delta, resource_id: tender_bonus, delta: 1}
+  - {type: world_resource_delta, resource_id: tender_batches_due, delta: 3}
+  - {type: world_property_set, property: tender_mode, value: 1}
+  - {type: world_property_set, property: shop_staffed, value: 1}
+  - {type: world_property_set, property: tender_delivered, value: 0}
+  - {type: world_property_set, property: tender_advance, value: 3}
+  - {type: world_property_set, property: tender_minutes, value: 420}
+  - type: public_event
+    event: gatebuild.tender_signed
+    summary: 水庭已出资。预付三枚，后两批每批三枚。就地验收，石料留给水庭。420 分钟内交齐，另付一枚。
+    data: {buyer: court, advance: 3, location_id: low_market}
+  success: {condition: actor.alive, result: sign_court_tender}
+  failure: {condition: actor.incapacitated, result: interrupted}
+  kind: atomic
+  executor: effect_pipeline
+  interrupt_policy: cancel
+  interaction_policy: allow
+
+- id: sign_yard_tender
+  version: 1
+  verb: authorize
+  description: 预付四枚，后两批每批三枚。须把石料送到货场，附带一枚招工津贴。420 分钟内交齐另付一枚。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - actor.state.location_id == 'low_market'
+  - actor.role == 'player'
+  - world.shop_road == 1
+  - world.tender_mode == 0
+  - world.shop_cash >= 1
+  - world.shop_cash <= 36
+  - world.yard_tender_stones <= 12
+  - world.tender_sign_slot == 1
+  - world.yard_wages >= 2
+  - world.settlement_fund >= 10
+  duration: {minutes: 4}
+  costs:
+    reserve: {yard_wages: 2, settlement_fund: 10, tender_sign_slot: 1}
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - {type: world_resource_delta, resource_id: shop_cash, delta: 4}
+  - {type: world_resource_delta, resource_id: tender_escrow, delta: 6}
+  - {type: world_resource_delta, resource_id: tender_bonus, delta: 1}
+  - {type: world_resource_delta, resource_id: tender_hiring_fund, delta: 1}
+  - {type: world_resource_delta, resource_id: tender_batches_due, delta: 3}
+  - {type: world_property_set, property: tender_mode, value: 2}
+  - {type: world_property_set, property: shop_staffed, value: 1}
+  - {type: world_property_set, property: tender_delivered, value: 0}
+  - {type: world_property_set, property: tender_advance, value: 4}
+  - {type: world_property_set, property: tender_minutes, value: 420}
+  - type: public_event
+    event: gatebuild.tender_signed
+    summary: 旧站已出资。预付四枚，后两批每批三枚。须把石料送到货场，附带一枚招工津贴。420 分钟内交齐另付一枚。
+    data: {buyer: yard, advance: 4, location_id: low_market}
+  success: {condition: actor.alive, result: sign_yard_tender}
+  failure: {condition: actor.incapacitated, result: interrupted}
+  kind: atomic
+  executor: effect_pipeline
+  interrupt_policy: cancel
+  interaction_policy: allow
+
+- id: tender_buy_ore
+  version: 1
+  verb: trade
+  description: 用三枚周转金在灰脊买六份矿。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - actor.state.location_id == 'mine_exchange'
+  - world.tender_mode > 0
+  - world.tender_batches_due >= 1
+  - world.market_ore < 2
+  - world.mine_ore >= 6
+  - world.mine_wages <= 167
+  - world.shop_cash >= 3
+  - world.shop_dispatch >= 1
+  - actor.inventory.tender_ore == 0
+  - (actor.role == 'player' or world.shop_staffed == 1)
+  duration: {minutes: 5}
+  costs:
+    reserve: {mine_ore: 6, shop_cash: 3, shop_dispatch: 1}
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - {type: world_resource_delta, resource_id: mine_wages, delta: 3}
+  - {type: inventory_add, item: tender_ore, quantity: 6}
+  - {type: world_property_delta, property: shop_spent, delta: 3}
+  success: {condition: actor.alive, result: tender_buy_ore}
+  failure: {condition: actor.incapacitated, result: interrupted}
+  kind: atomic
+  executor: effect_pipeline
+  interrupt_policy: cancel
+  interaction_policy: allow
+
+- id: tender_unload_ore
+  version: 1
+  verb: trade
+  description: 卸下六份已购矿料，放进坊市的工坊仓。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - actor.state.location_id == 'low_market'
+  - actor.inventory.tender_ore >= 6
+  - world.market_ore <= 29
+  duration: {minutes: 5}
+  costs:
+    reserve: {tender_ore: 6}
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - {type: resource_transfer, resource_id: market_ore, source_item: tender_ore, quantity: 6}
+  - {type: world_resource_delta, resource_id: shop_dispatch, delta: 1}
+  - type: public_event
+    event: gatebuild.shop_supply_arrived
+    summary: 六份合同矿料到了坊市。
+    data: {quantity: 6, location_id: low_market}
+  success: {condition: actor.alive, result: tender_unload_ore}
+  failure: {condition: actor.incapacitated, result: interrupted}
+  kind: atomic
+  executor: effect_pipeline
+  interrupt_policy: cancel
+  interaction_policy: allow
+
+- id: tender_pack_stones
+  version: 1
+  verb: craft
+  description: 苗原的工位压制路石并装一箱，等人送往旧站。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - actor.state.location_id == 'low_market'
+  - world.tender_mode == 2
+  - world.tender_yard_ready < 3
+  - world.market_ore >= 2
+  - world.shop_cash >= 1
+  - world.shop_bench >= 1
+  - world.tender_batches_due >= 1
+  - (actor.role == 'player' or world.shop_staffed == 1)
+  duration: {minutes: 14}
+  costs:
+    reserve: {market_ore: 2, shop_cash: 1, shop_bench: 1, tender_batches_due: 1}
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - {type: inventory_add, item: coin, quantity: 1}
+  - {type: world_property_delta, property: shop_spent, delta: 1}
+  - {type: world_resource_delta, resource_id: shop_bench, delta: 1}
+  - {type: world_resource_delta, resource_id: tender_yard_ready, delta: 1}
+  success: {condition: actor.alive, result: tender_pack_stones}
+  failure: {condition: actor.incapacitated, result: interrupted}
+  kind: atomic
+  executor: effect_pipeline
+  interrupt_policy: cancel
+  interaction_policy: allow
+
+- id: tender_load_stones
+  version: 1
+  verb: trade
+  description: 把一箱路石装上货车。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - actor.state.location_id == 'low_market'
+  - world.tender_mode == 2
+  - world.tender_yard_ready >= 1
+  - actor.inventory.tender_yard_crate == 0
+  - (actor.role == 'player' or world.shop_staffed == 1)
+  duration: {minutes: 4}
+  costs:
+    reserve: {tender_yard_ready: 1}
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - {type: inventory_add, item: tender_yard_crate, quantity: 1}
+  success: {condition: actor.alive, result: tender_load_stones}
+  failure: {condition: actor.incapacitated, result: interrupted}
+  kind: atomic
+  executor: effect_pipeline
+  interrupt_policy: cancel
+  interaction_policy: allow
+
+- id: tender_court_advance
+  version: 1
+  verb: trade
+  description: 两份路石在坊市验收。抵扣三枚预付款。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - actor.state.location_id == 'low_market'
+  - world.tender_mode == 1
+  - world.tender_delivered < 3
+  - world.court_tender_stones <= 16
+  - world.tender_advance > 0
+  - world.market_ore >= 2
+  - world.shop_cash >= 1
+  - world.shop_bench >= 1
+  - world.tender_batches_due >= 1
+  - (actor.role == 'player' or world.shop_staffed == 1)
+  duration: {minutes: 14}
+  costs:
+    reserve: {tender_receipt_slot: 1, market_ore: 2, shop_cash: 1, shop_bench: 1, tender_batches_due: 1}
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - {type: world_resource_delta, resource_id: tender_receipt_slot, delta: 1}
+  - {type: inventory_add, item: coin, quantity: 1}
+  - {type: world_property_delta, property: shop_spent, delta: 1}
+  - {type: world_resource_delta, resource_id: shop_bench, delta: 1}
+  - {type: world_property_set, property: tender_advance, value: 0}
+  - {type: world_resource_delta, resource_id: court_tender_stones, delta: 2}
+  - {type: world_property_delta, property: tender_delivered, delta: 1}
+  - {type: world_property_delta, property: shop_batches, delta: 1}
+  - {type: world_property_delta, property: shop_sales, delta: 3}
+  - type: public_event
+    event: gatebuild.tender_delivery
+    summary: 两份路石在坊市验收。抵扣三枚预付款。
+    data: {buyer: court, revenue: 3, location_id: low_market}
+  success: {condition: actor.alive, result: tender_court_advance}
+  failure: {condition: actor.incapacitated, result: interrupted}
+  kind: atomic
+  executor: effect_pipeline
+  interrupt_policy: cancel
+  interaction_policy: allow
+
+- id: tender_court_payment
+  version: 1
+  verb: trade
+  description: 两份路石在坊市验收。托管账户放款三枚。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - actor.state.location_id == 'low_market'
+  - world.tender_mode == 1
+  - world.tender_delivered < 3
+  - world.court_tender_stones <= 16
+  - world.tender_advance == 0
+  - world.tender_escrow >= 3
+  - world.shop_cash <= 37
+  - world.market_ore >= 2
+  - world.shop_cash >= 1
+  - world.shop_bench >= 1
+  - world.tender_batches_due >= 1
+  - (actor.role == 'player' or world.shop_staffed == 1)
+  duration: {minutes: 14}
+  costs:
+    reserve: {tender_receipt_slot: 1, market_ore: 2, shop_cash: 1, shop_bench: 1, tender_batches_due: 1, tender_escrow: 3}
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - {type: world_resource_delta, resource_id: tender_receipt_slot, delta: 1}
+  - {type: inventory_add, item: coin, quantity: 1}
+  - {type: world_property_delta, property: shop_spent, delta: 1}
+  - {type: world_resource_delta, resource_id: shop_bench, delta: 1}
+  - {type: world_resource_delta, resource_id: shop_cash, delta: 3}
+  - {type: world_resource_delta, resource_id: court_tender_stones, delta: 2}
+  - {type: world_property_delta, property: tender_delivered, delta: 1}
+  - {type: world_property_delta, property: shop_batches, delta: 1}
+  - {type: world_property_delta, property: shop_sales, delta: 3}
+  - type: public_event
+    event: gatebuild.tender_delivery
+    summary: 两份路石在坊市验收。托管账户放款三枚。
+    data: {buyer: court, revenue: 3, location_id: low_market}
+  success: {condition: actor.alive, result: tender_court_payment}
+  failure: {condition: actor.incapacitated, result: interrupted}
+  kind: atomic
+  executor: effect_pipeline
+  interrupt_policy: cancel
+  interaction_policy: allow
+
+- id: tender_yard_advance
+  version: 1
+  verb: trade
+  description: 路石实物已送抵旧站。抵扣四枚预付款。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - actor.state.location_id == 'old_yard'
+  - world.tender_mode == 2
+  - world.tender_delivered < 3
+  - world.yard_tender_stones <= 16
+  - world.tender_advance > 0
+  - world.tender_mode == 2
+  - actor.inventory.tender_yard_crate >= 1
+  - (actor.role == 'player' or world.shop_staffed == 1)
+  duration: {minutes: 8}
+  costs:
+    reserve: {tender_receipt_slot: 1, tender_yard_crate: 1}
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - {type: world_resource_delta, resource_id: tender_receipt_slot, delta: 1}
+  - {type: world_property_set, property: tender_advance, value: 0}
+  - {type: world_resource_delta, resource_id: yard_tender_stones, delta: 2}
+  - {type: world_property_delta, property: tender_delivered, delta: 1}
+  - {type: world_property_delta, property: shop_batches, delta: 1}
+  - {type: world_property_delta, property: shop_sales, delta: 4}
+  - type: public_event
+    event: gatebuild.tender_delivery
+    summary: 路石实物已送抵旧站。抵扣四枚预付款。
+    data: {buyer: yard, revenue: 4, location_id: old_yard}
+  success: {condition: actor.alive, result: tender_yard_advance}
+  failure: {condition: actor.incapacitated, result: interrupted}
+  kind: atomic
+  executor: effect_pipeline
+  interrupt_policy: cancel
+  interaction_policy: allow
+
+- id: tender_yard_payment
+  version: 1
+  verb: trade
+  description: 路石实物已送抵旧站。托管账户放款三枚。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - actor.state.location_id == 'old_yard'
+  - world.tender_mode == 2
+  - world.tender_delivered < 3
+  - world.yard_tender_stones <= 16
+  - world.tender_advance == 0
+  - world.tender_escrow >= 3
+  - world.shop_cash <= 37
+  - world.tender_mode == 2
+  - actor.inventory.tender_yard_crate >= 1
+  - (actor.role == 'player' or world.shop_staffed == 1)
+  duration: {minutes: 8}
+  costs:
+    reserve: {tender_receipt_slot: 1, tender_yard_crate: 1, tender_escrow: 3}
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - {type: world_resource_delta, resource_id: tender_receipt_slot, delta: 1}
+  - {type: world_resource_delta, resource_id: shop_cash, delta: 3}
+  - {type: world_resource_delta, resource_id: yard_tender_stones, delta: 2}
+  - {type: world_property_delta, property: tender_delivered, delta: 1}
+  - {type: world_property_delta, property: shop_batches, delta: 1}
+  - {type: world_property_delta, property: shop_sales, delta: 3}
+  - type: public_event
+    event: gatebuild.tender_delivery
+    summary: 路石实物已送抵旧站。托管账户放款三枚。
+    data: {buyer: yard, revenue: 3, location_id: old_yard}
+  success: {condition: actor.alive, result: tender_yard_payment}
+  failure: {condition: actor.incapacitated, result: interrupted}
+  kind: atomic
+  executor: effect_pipeline
+  interrupt_policy: cancel
+  interaction_policy: allow
+
+- id: tender_hire
+  version: 1
+  verb: work
+  description: 旧站居民到低城领一枚津贴，在工坊添一个工位。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - actor.state.location_id == 'low_market'
+  - world.tender_mode == 2
+  - world.tender_hired == 0
+  - world.tender_hiring_fund == 1
+  duration: {minutes: 7}
+  costs:
+    reserve: {tender_hiring_fund: 1}
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - {type: inventory_add, item: coin, quantity: 1}
+  - {type: world_resource_delta, resource_id: shop_bench, delta: 1}
+  - {type: world_property_set, property: tender_hired, value: 1}
+  - type: public_event
+    event: gatebuild.tender_hired
+    summary: 从旧站来的工友领了津贴，坊市工坊有了第二个工位。
+    data: {location_id: low_market}
+  success: {condition: actor.alive, result: tender_hire}
+  failure: {condition: actor.incapacitated, result: interrupted}
+  kind: atomic
+  executor: effect_pipeline
+  interrupt_policy: cancel
+  interaction_policy: allow
+
+- id: tender_close_court_ontime
+  version: 1
+  verb: trade
+  description: 三批已经验收。按约把一枚准时奖记入工坊账。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - actor.state.location_id == 'low_market'
+  - actor.role == 'player'
+  - world.tender_mode > 0
+  - world.tender_delivered == 3
+  - world.tender_bonus == 1
+  - world.tender_mode == 1
+  - world.tender_minutes > 0
+  - world.shop_cash < 40
+  duration: {minutes: 4}
+  costs:
+    reserve: {tender_bonus: 1}
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - {type: world_resource_delta, resource_id: shop_cash, delta: 1}
+  - {type: world_property_delta, property: shop_sales, delta: 1}
+  - {type: world_resource_delta, resource_id: tender_sign_slot, delta: 1}
+  - {type: world_property_set, property: tender_last_mode, value: 1}
+  - {type: world_property_set, property: tender_mode, value: 0}
+  - {type: world_property_delta, property: tender_terms, delta: 1}
+  - type: public_event
+    event: gatebuild.tender_closed
+    summary: 三批已经验收。按约把一枚准时奖记入工坊账。
+    data: {buyer: court, ontime: true, location_id: low_market}
+  success: {condition: actor.alive, result: tender_close_court_ontime}
+  failure: {condition: actor.incapacitated, result: interrupted}
+  kind: atomic
+  executor: effect_pipeline
+  interrupt_policy: cancel
+  interaction_policy: allow
+
+- id: tender_close_court_late
+  version: 1
+  verb: trade
+  description: 三批已经验收。交货超期，一枚奖励退给出资方。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - actor.state.location_id == 'low_market'
+  - actor.role == 'player'
+  - world.tender_mode > 0
+  - world.tender_delivered == 3
+  - world.tender_bonus == 1
+  - world.tender_mode == 1
+  - world.tender_minutes == 0
+  - world.low_wages < 170
+  duration: {minutes: 4}
+  costs:
+    reserve: {tender_bonus: 1}
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - {type: world_resource_delta, resource_id: low_wages, delta: 1}
+  - {type: world_resource_delta, resource_id: tender_sign_slot, delta: 1}
+  - {type: world_property_set, property: tender_last_mode, value: 1}
+  - {type: world_property_set, property: tender_mode, value: 0}
+  - {type: world_property_delta, property: tender_terms, delta: 1}
+  - type: public_event
+    event: gatebuild.tender_closed
+    summary: 三批已经验收。交货超期，一枚奖励退给出资方。
+    data: {buyer: court, ontime: false, location_id: low_market}
+  success: {condition: actor.alive, result: tender_close_court_late}
+  failure: {condition: actor.incapacitated, result: interrupted}
+  kind: atomic
+  executor: effect_pipeline
+  interrupt_policy: cancel
+  interaction_policy: allow
+
+- id: tender_close_yard_ontime
+  version: 1
+  verb: trade
+  description: 三批已经验收。按约把一枚准时奖记入工坊账。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - actor.state.location_id == 'low_market'
+  - actor.role == 'player'
+  - world.tender_mode > 0
+  - world.tender_delivered == 3
+  - world.tender_bonus == 1
+  - world.tender_mode == 2
+  - world.tender_minutes > 0
+  - world.shop_cash < 40
+  duration: {minutes: 4}
+  costs:
+    reserve: {tender_bonus: 1}
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - {type: world_resource_delta, resource_id: shop_cash, delta: 1}
+  - {type: world_property_delta, property: shop_sales, delta: 1}
+  - {type: world_resource_delta, resource_id: tender_sign_slot, delta: 1}
+  - {type: world_property_set, property: tender_last_mode, value: 2}
+  - {type: world_property_set, property: tender_mode, value: 0}
+  - {type: world_property_delta, property: tender_terms, delta: 1}
+  - type: public_event
+    event: gatebuild.tender_closed
+    summary: 三批已经验收。按约把一枚准时奖记入工坊账。
+    data: {buyer: yard, ontime: true, location_id: low_market}
+  success: {condition: actor.alive, result: tender_close_yard_ontime}
+  failure: {condition: actor.incapacitated, result: interrupted}
+  kind: atomic
+  executor: effect_pipeline
+  interrupt_policy: cancel
+  interaction_policy: allow
+
+- id: tender_close_yard_late
+  version: 1
+  verb: trade
+  description: 三批已经验收。交货超期，一枚奖励退给出资方。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - actor.state.location_id == 'low_market'
+  - actor.role == 'player'
+  - world.tender_mode > 0
+  - world.tender_delivered == 3
+  - world.tender_bonus == 1
+  - world.tender_mode == 2
+  - world.tender_minutes == 0
+  - world.settlement_fund < 40
+  duration: {minutes: 4}
+  costs:
+    reserve: {tender_bonus: 1}
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - {type: world_resource_delta, resource_id: settlement_fund, delta: 1}
+  - {type: world_resource_delta, resource_id: tender_sign_slot, delta: 1}
+  - {type: world_property_set, property: tender_last_mode, value: 2}
+  - {type: world_property_set, property: tender_mode, value: 0}
+  - {type: world_property_delta, property: tender_terms, delta: 1}
+  - type: public_event
+    event: gatebuild.tender_closed
+    summary: 三批已经验收。交货超期，一枚奖励退给出资方。
+    data: {buyer: yard, ontime: false, location_id: low_market}
+  success: {condition: actor.alive, result: tender_close_yard_late}
+  failure: {condition: actor.incapacitated, result: interrupted}
+  kind: atomic
+  executor: effect_pipeline
+  interrupt_policy: cancel
+  interaction_policy: allow
+
+- id: tender_irrigate
+  version: 1
+  verb: build
+  description: 用六份水庭路石砌渠。此后水庭有余水时，每小时向农圃调两份。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - actor.state.location_id == 'low_fields'
+  - actor.role == 'player'
+  - world.tender_mode == 0
+  - world.court_tender_stones >= 6
+  - world.tender_irrigate == 0
+  duration: {minutes: 12}
+  costs:
+    reserve: {court_tender_stones: 6}
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - {type: world_property_set, property: tender_irrigate, value: 1}
+  - type: public_event
+    event: gatebuild.tender_public_work
+    summary: 农圃引水渠已竣工，六份水庭路石已投入工程。今后水庭有余水时，农圃每小时可补两份水。
+    data: {buyer: court, location_id: low_fields}
+  success: {condition: actor.alive, result: tender_irrigate}
+  failure: {condition: actor.incapacitated, result: interrupted}
+  kind: atomic
+  executor: effect_pipeline
+  interrupt_policy: cancel
+  interaction_policy: allow
+
+- id: tender_resurface
+  version: 1
+  verb: build
+  description: 用六份旧站路石铺装货道。铁轨货场到旧站只需两分钟。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - actor.state.location_id == 'old_yard'
+  - actor.role == 'player'
+  - world.tender_mode == 0
+  - world.yard_tender_stones >= 6
+  - world.tender_resurface == 0
+  duration: {minutes: 12}
+  costs:
+    reserve: {yard_tender_stones: 6}
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - {type: world_property_set, property: tender_resurface, value: 1}
+  - {type: route_edit, mode: unlink, from: old_yard, to: old_station}
+  - {type: route_edit, from: old_yard, to: old_station, distance: 2}
+  - type: public_event
+    event: gatebuild.tender_public_work
+    summary: 旧站装货道已通车，六份采购路石已用完。铁轨货场到旧站的路缩短到两分钟。
+    data: {buyer: yard, location_id: old_yard}
+  success: {condition: actor.alive, result: tender_resurface}
+  failure: {condition: actor.incapacitated, result: interrupted}
+  kind: atomic
+  executor: effect_pipeline
+  interrupt_policy: cancel
+  interaction_policy: allow
+
+- id: relief_buy_yard
+  version: 1
+  verb: trade
+  description: 低城薪金库付 6 枚，旧站留下至少 10 份饭。拿到的 10 份够放饭和开工两件事。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - actor.state.location_id == 'low_city'
+  - actor.role == 'player'
+  - world.shop_road == 1
+  - world.relief_phase == 0
+  - world.relief_reopen == 0
+  - world.low_food <= 6
+  - world.relief_food == 0
+  - world.relief_desk >= 1
+  - world.yard_food >= 20
+  - world.low_wages >= 6
+  - world.yard_wages <= 164
+  duration: {minutes: 2}
+  costs:
+    reserve: {relief_desk: 1, yard_food: 10, low_wages: 6}
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - {type: world_property_set, property: relief_phase, value: 1}
+  - {type: world_property_delta, property: relief_cases, delta: 1}
+  - {type: world_property_set, property: relief_decisions, value: 0}
+  - {type: world_property_set, property: relief_handout, value: 0}
+  - {type: world_property_set, property: relief_work, value: 0}
+  - {type: world_resource_delta, resource_id: yard_wages, delta: 6}
+  - {type: world_resource_delta, resource_id: relief_food, delta: 10}
+  - {type: world_property_set, property: relief_source, value: 1}
+  - {type: public_event, event: gatebuild.relief_open, summary: 低城以六枚钱向旧站采购十份饭。粮已进入议事储备，接下来由玩家安排去向。, data: {source: yard, food: 10, coins: 6, location_id: low_city}}
+  - {type: world_resource_delta, resource_id: relief_desk, delta: 1}
+  success: {condition: actor.alive, result: relief_buy_yard}
+  failure: {condition: actor.incapacitated or world.yard_wages > 164, result: interrupted}
+  kind: atomic
+  executor: effect_pipeline
+  interrupt_policy: cancel
+  interaction_policy: allow
+
+- id: relief_early_harvest
+  version: 1
+  verb: work
+  description: 用 4 份井水和 2 份燃料抢收，筹出 6 份饭。保住薪金，只够优先做一件事。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - actor.state.location_id == 'low_city'
+  - actor.role == 'player'
+  - world.shop_road == 1
+  - world.relief_phase == 0
+  - world.relief_reopen == 0
+  - world.low_food <= 6
+  - world.relief_food == 0
+  - world.relief_desk >= 1
+  - world.low_water >= 18
+  - world.field_fuel >= 2
+  - world.farm_water <= 22
+  duration: {minutes: 3}
+  costs:
+    reserve: {relief_desk: 1, low_water: 4, field_fuel: 2}
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - {type: world_property_set, property: relief_phase, value: 1}
+  - {type: world_property_delta, property: relief_cases, delta: 1}
+  - {type: world_property_set, property: relief_decisions, value: 0}
+  - {type: world_property_set, property: relief_handout, value: 0}
+  - {type: world_property_set, property: relief_work, value: 0}
+  - {type: world_resource_delta, resource_id: farm_water, delta: 2}
+  - {type: world_resource_delta, resource_id: relief_food, delta: 6}
+  - {type: world_property_set, property: relief_source, value: 2}
+  - {type: public_event, event: gatebuild.relief_open, summary: 低城拨井水和燃料抢收，六份新饭入储备。水庭薪金库保留原有款项。, data: {source: harvest, food: 6, water: 4, location_id: low_city}}
+  - {type: world_resource_delta, resource_id: relief_desk, delta: 1}
+  success: {condition: actor.alive, result: relief_early_harvest}
+  failure: {condition: actor.incapacitated or world.farm_water > 22, result: interrupted}
+  kind: atomic
+  executor: effect_pipeline
+  interrupt_policy: cancel
+  interaction_policy: allow
+
+- id: relief_feed_neighborhood
+  version: 1
+  verb: authorize
+  description: 把储备的 6 份饭放进水庭公粮。居民可以马上领取。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - actor.state.location_id == 'low_city'
+  - actor.role == 'player'
+  - world.relief_phase == 1
+  - world.relief_desk >= 1
+  - world.relief_handout == 0
+  - world.relief_food >= 6
+  - world.low_food <= 42
+  duration: {minutes: 2}
+  costs:
+    reserve: {relief_desk: 1, relief_food: 6}
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - {type: world_resource_delta, resource_id: low_food, delta: 6}
+  - {type: world_property_delta, property: relief_decisions, delta: 1}
+  - {type: world_property_set, property: relief_handout, value: 1}
+  - {type: public_event, event: gatebuild.relief_handout, summary: 六份饭已拨进低城水庭公粮，居民可按平常方式领取。, data: {food: 6, location_id: low_city}}
+  - {type: world_resource_delta, resource_id: relief_desk, delta: 1}
+  success: {condition: actor.alive, result: relief_feed_neighborhood}
+  failure: {condition: actor.incapacitated or world.low_food > 42, result: interrupted}
+  kind: atomic
+  executor: effect_pipeline
+  interrupt_policy: cancel
+  interaction_policy: allow
+
+- id: relief_commission_path
+  version: 1
+  verb: authorize
+  description: 留足两个有饭吃的工班。工班完工后，坊市到农圃由 6 分钟缩至 2 分钟。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - actor.state.location_id == 'low_city'
+  - actor.role == 'player'
+  - world.relief_phase == 1
+  - world.relief_desk >= 1
+  - world.relief_work == 0
+  - world.relief_food >= 4
+  - world.relief_path == 0
+  - world.relief_jobs == 0
+  - world.relief_path_shifts == 0
+  - world.relief_crew_food == 0
+  duration: {minutes: 2}
+  costs:
+    reserve: {relief_desk: 1, relief_food: 4}
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - {type: world_resource_delta, resource_id: relief_crew_food, delta: 4}
+  - {type: world_resource_delta, resource_id: relief_jobs, delta: 2}
+  - {type: world_property_delta, property: relief_decisions, delta: 1}
+  - {type: world_property_set, property: relief_work, value: 1}
+  - {type: public_event, event: gatebuild.relief_path_commissioned, summary: 两班坊市短路工程各备好两份饭，等待本地工人上工。, data: {food: 4, slots: 2, location_id: low_market}}
+  - {type: world_resource_delta, resource_id: relief_desk, delta: 1}
+  success: {condition: actor.alive, result: relief_commission_path}
+  failure: {condition: actor.incapacitated, result: interrupted}
+  kind: atomic
+  executor: effect_pipeline
+  interrupt_policy: cancel
+  interaction_policy: allow
+
+- id: relief_path_first
+  version: 1
+  verb: build
+  description: 领两份饭，和班组铺出农圃小路。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - actor.state.location_id == 'low_market'
+  - actor.state.job_region == 'low'
+  - world.relief_jobs >= 1
+  - world.relief_crew_food >= 2
+  - world.relief_path == 0
+  - world.relief_path_shifts == 0
+  - world.relief_worksite >= 1
+  duration: {minutes: 5}
+  costs:
+    reserve: {relief_jobs: 1, relief_crew_food: 2, relief_worksite: 1}
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - {type: need_delta, need: satiety, delta: 35}
+  - {type: need_delta, need: belonging, delta: 8}
+  - {type: world_property_delta, property: relief_path_shifts, delta: 1}
+  - {type: world_resource_delta, resource_id: relief_worksite, delta: 1}
+  success: {condition: actor.alive, result: relief_path_first}
+  failure: {condition: actor.incapacitated, result: interrupted}
+  kind: atomic
+  executor: effect_pipeline
+  interrupt_policy: cancel
+  interaction_policy: allow
+
+- id: relief_path_finish
+  version: 1
+  verb: build
+  description: 领两份饭，和班组铺出农圃小路。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - actor.state.location_id == 'low_market'
+  - actor.state.job_region == 'low'
+  - world.relief_jobs >= 1
+  - world.relief_crew_food >= 2
+  - world.relief_path == 0
+  - world.relief_path_shifts == 1
+  - world.relief_worksite >= 1
+  duration: {minutes: 5}
+  costs:
+    reserve: {relief_jobs: 1, relief_crew_food: 2, relief_worksite: 1}
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - {type: need_delta, need: satiety, delta: 35}
+  - {type: need_delta, need: belonging, delta: 8}
+  - {type: world_property_delta, property: relief_path_shifts, delta: 1}
+  - {type: world_resource_delta, resource_id: relief_worksite, delta: 1}
+  - {type: route_edit, from: low_market, to: low_fields, distance: 2}
+  - {type: world_property_set, property: relief_path, value: 1}
+  - {type: public_event, event: gatebuild.relief_path_open, summary: 两班工人已经铺好近路。坊市到农圃现在只要两分钟。, data: {location_id: low_market}}
+  success: {condition: actor.alive, result: relief_path_finish}
+  failure: {condition: actor.incapacitated, result: interrupted}
+  kind: atomic
+  executor: effect_pipeline
+  interrupt_policy: cancel
+  interaction_policy: allow
+
+- id: relief_ratify_trade
+  version: 1
+  verb: authorize
+  description: 低城再付 2 枚先换 3 份饭。以后低城缺饭、两地有余资时按同价续换。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - actor.state.location_id == 'low_city'
+  - actor.role == 'player'
+  - world.relief_phase == 1
+  - world.relief_decisions > 0
+  - world.relief_desk >= 1
+  - world.low_wages >= 2
+  - world.yard_wages <= 168
+  - world.yard_food >= 13
+  - world.low_food <= 45
+  duration: {minutes: 2}
+  costs:
+    reserve: {relief_desk: 1, low_wages: 2, yard_food: 3}
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - {type: world_property_set, property: relief_phase, value: 0}
+  - {type: world_property_set, property: relief_reopen, value: 180}
+  - {type: world_resource_delta, resource_id: yard_wages, delta: 2}
+  - {type: world_resource_delta, resource_id: low_food, delta: 3}
+  - {type: world_property_set, property: relief_policy, value: 1}
+  - {type: public_event, event: gatebuild.relief_charter, summary: 两城签了互济契约。首笔两枚钱已经到账，三份饭已经拨进水庭公粮。, data: {policy: trade, food: 3, coins: 2, location_id: low_city}}
+  - {type: world_resource_delta, resource_id: relief_desk, delta: 1}
+  success: {condition: actor.alive, result: relief_ratify_trade}
+  failure: {condition: actor.incapacitated or world.yard_wages > 168 or world.low_food > 45, result: interrupted}
+  kind: atomic
+  executor: effect_pipeline
+  interrupt_policy: cancel
+  interaction_policy: allow
+
+- id: relief_ratify_growers
+  version: 1
+  verb: authorize
+  description: 先拨 3 份井水给农圃。以后缺饭时，农圃用有余的水和燃料补收。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - actor.state.location_id == 'low_city'
+  - actor.role == 'player'
+  - world.relief_phase == 1
+  - world.relief_decisions > 0
+  - world.relief_desk >= 1
+  - world.low_water >= 16
+  - world.farm_water <= 21
+  duration: {minutes: 2}
+  costs:
+    reserve: {relief_desk: 1, low_water: 3}
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - {type: world_property_set, property: relief_phase, value: 0}
+  - {type: world_property_set, property: relief_reopen, value: 180}
+  - {type: world_resource_delta, resource_id: farm_water, delta: 3}
+  - {type: world_property_set, property: relief_policy, value: 2}
+  - {type: public_event, event: gatebuild.relief_charter, summary: 水庭把三份井水划给农圃。今后缺饭时，农圃可按余水和燃料量补收。, data: {policy: growers, water: 3, location_id: low_city}}
+  - {type: world_resource_delta, resource_id: relief_desk, delta: 1}
+  success: {condition: actor.alive, result: relief_ratify_growers}
+  failure: {condition: actor.incapacitated or world.farm_water > 21, result: interrupted}
+  kind: atomic
+  executor: effect_pipeline
+  interrupt_policy: cancel
+  interaction_policy: allow
+
+- id: relief_keep_reserves
+  version: 1
+  verb: authorize
+  description: 把没用完的饭逐份退回水庭公粮，沿用现行长期安排。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - actor.state.location_id == 'low_city'
+  - actor.role == 'player'
+  - world.relief_phase == 1
+  - world.relief_decisions > 0
+  - world.relief_desk >= 1
+  duration: {minutes: 2}
+  costs:
+    reserve: {relief_desk: 1}
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - {type: world_property_set, property: relief_phase, value: 0}
+  - {type: world_property_set, property: relief_reopen, value: 180}
+  - {type: public_event, event: gatebuild.relief_charter, summary: 本次议事已经结束。未用完的饭将退回水庭公粮，长期安排沿用现状。, data: {policy: unchanged, location_id: low_city}}
+  - {type: world_resource_delta, resource_id: relief_desk, delta: 1}
+  success: {condition: actor.alive, result: relief_keep_reserves}
+  failure: {condition: actor.incapacitated, result: interrupted}
+  kind: atomic
+  executor: effect_pipeline
+  interrupt_policy: cancel
+  interaction_policy: allow
+
+- id: relief_path_market
+  version: 1
+  verb: build
+  description: 出两枚钱设摊。公粮偏低时，用一份水庭余水补三份饭。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - actor.state.location_id == 'low_market'
+  - actor.role == 'player'
+  - world.relief_phase == 0
+  - world.relief_path == 1
+  - world.relief_path_use == 0
+  - world.relief_desk >= 1
+  - world.low_wages <= 168
+  duration: {minutes: 3}
+  costs:
+    reserve: {relief_desk: 1, coin: 2}
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - {type: world_resource_delta, resource_id: low_wages, delta: 2}
+  - {type: world_property_set, property: relief_path_use, value: 1}
+  - {type: public_event, event: gatebuild.relief_path_use, summary: 玩家出了两枚钱，农圃在近路边有了早摊。缺饭时会按库存补给水庭。, data: {use: farm, location_id: low_fields}}
+  - {type: world_resource_delta, resource_id: relief_desk, delta: 1}
+  success: {condition: actor.alive, result: relief_path_market}
+  failure: {condition: actor.incapacitated or world.low_wages > 168, result: interrupted}
+  kind: atomic
+  executor: effect_pipeline
+  interrupt_policy: cancel
+  interaction_policy: allow
+
+- id: relief_path_freight
+  version: 1
+  verb: build
+  description: 从工坊付一枚钱。坊市缺矿时，旧站有余料便补两份。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - actor.state.location_id == 'low_market'
+  - actor.role == 'player'
+  - world.relief_phase == 0
+  - world.relief_path == 1
+  - world.relief_path_use == 0
+  - world.relief_desk >= 1
+  - world.shop_open == 1
+  - world.shop_cash >= 1
+  - world.low_wages <= 169
+  duration: {minutes: 3}
+  costs:
+    reserve: {relief_desk: 1, shop_cash: 1}
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - {type: world_resource_delta, resource_id: low_wages, delta: 1}
+  - {type: world_property_set, property: relief_path_use, value: 2}
+  - {type: public_event, event: gatebuild.relief_path_use, summary: 工坊已经出资设备料点。旧站有余矿时，会从空出的货位拨料给坊市。, data: {use: workshop, location_id: low_fields}}
+  - {type: world_resource_delta, resource_id: relief_desk, delta: 1}
+  success: {condition: actor.alive, result: relief_path_freight}
+  failure: {condition: actor.incapacitated or world.low_wages > 169, result: interrupted}
   kind: atomic
   executor: effect_pipeline
   interrupt_policy: cancel

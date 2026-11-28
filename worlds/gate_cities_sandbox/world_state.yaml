@@ -86,3 +86,41 @@ world_state:
     shop_spent: 0
     shop_dividends: 0
     shop_road: 0
+    crew_table_slot: 1
+    tender_receipt_slot: 1
+    tender_sign_slot: 1
+    tender_escrow: 0
+    tender_bonus: 0
+    tender_hiring_fund: 0
+    tender_batches_due: 0
+    tender_yard_ready: 0
+    court_tender_stones: 0
+    yard_tender_stones: 0
+    crew_table: 0
+    tender_mode: 0
+    tender_delivered: 0
+    tender_advance: 0
+    tender_minutes: 0
+    tender_hired: 0
+    tender_last_mode: 0
+    tender_terms: 0
+    tender_irrigate: 0
+    tender_resurface: 0
+    relief_desk: 1
+    relief_food: 0
+    relief_crew_food: 0
+    relief_jobs: 0
+    relief_worksite: 1
+    relief_phase: 0
+    relief_reopen: 0
+    relief_cases: 0
+    relief_source: 0
+    relief_decisions: 0
+    relief_handout: 0
+    relief_work: 0
+    relief_path: 0
+    relief_path_shifts: 0
+    relief_policy: 0
+    relief_followups: 0
+    relief_path_use: 0
+    relief_path_trades: 0

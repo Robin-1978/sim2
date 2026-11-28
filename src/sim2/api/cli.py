@@ -387,7 +387,9 @@ def _run_simulate(args: argparse.Namespace) -> None:
         platform.close()
 
 
-def _run_serve(args: argparse.Namespace, *, open_browser: bool = False) -> None:
+def _run_serve(
+    args: argparse.Namespace, *, open_browser: bool = False, upgrade_bundled: bool = False,
+) -> None:
     db_path = args.db
     if db_path is None:
         try:
@@ -401,6 +403,13 @@ def _run_serve(args: argparse.Namespace, *, open_browser: bool = False) -> None:
         format="%(asctime)s %(levelname)s %(name)s %(message)s",
         datefmt="%Y-%m-%d %H:%M:%S",
     )
+    if upgrade_bundled and db_path is not None:
+        upgrade = InstanceRegistry(args.runtime_root).upgrade_bundled_for_play(db_path)
+        if upgrade:
+            logging.getLogger("sim2.play").warning(
+                "Upgraded save from %s to %s. Backup saved at %s",
+                upgrade["from"], upgrade["to"], upgrade["snapshot"],
+            )
     server_kwargs = {
         "authoring_root": args.authoring_root,
         "operator_token": args.operator_token,
@@ -438,7 +447,7 @@ def _run_serve(args: argparse.Namespace, *, open_browser: bool = False) -> None:
 
 
 def _run_play(args: argparse.Namespace) -> None:
-    _run_serve(args, open_browser=not bool(getattr(args, "no_browser", False)))
+    _run_serve(args, open_browser=not args.no_browser, upgrade_bundled=True)
 
 
 def _sync_player_template(platform: Platform, args: argparse.Namespace) -> Any:

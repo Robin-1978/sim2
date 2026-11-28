@@ -20,6 +20,14 @@ director:
   - shop_cash
   - shop_batches
   - paving_stock
+  - tender_mode
+  - tender_delivered
+  - tender_hired
+  - crew_table
+  - relief_cases
+  - relief_path
+  - relief_policy
+  - relief_path_use
   context_events:
   - gatebuild.opened
   - gatebuild.sale
@@ -30,6 +38,14 @@ director:
   - gatebuild.embargo_notice
   - gatebuild.shop_batch_sold
   - gatebuild.shop_road_opened
+  - gatebuild.relief_charter
+  - gatebuild.relief_path_open
+  - gatebuild.relief_path_use
+  - gatebuild.crew_table
+  - gatebuild.tender_signed
+  - gatebuild.tender_hired
+  - gatebuild.tender_closed
+  - gatebuild.tender_public_work
   context_residents: 2
 limits:
   manual_without_model: true
@@ -61,6 +77,14 @@ wakes:
   - gatebuild.bridge_ready
   - gatebuild.shop_batch_sold
   - gatebuild.shop_road_opened
+  - gatebuild.relief_charter
+  - gatebuild.relief_path_open
+  - gatebuild.relief_path_use
+  - gatebuild.crew_table
+  - gatebuild.tender_signed
+  - gatebuild.tender_hired
+  - gatebuild.tender_closed
+  - gatebuild.tender_public_work
   - world.change.rule
   - entity.created
   - definition.registered
@@ -72,7 +96,7 @@ wakes:
   - query_history
   - propose_story_beat
   - wait
-  purpose: 沿已经发生的变化，给玩家一个可执行、尚未决定的城际安排。
+  purpose: 沿已发生的变化，提出可执行且尚未决定的下一步。可结合已出现的居民处境或两城经济关系。
 triggers:
 - id: review_open_gate
   when: world.connected_count >= 1

@@ -1,7 +1,7 @@
 import { paintAvatar, renderSceneWorldCover } from "./art.js";
 import { applyAmbientProfile } from "./audio.js";
-import { $, clamp, crisisMetrics, crisisMood, el, formatWorldProperty, humanizeKey, state, toast, uiConfig } from "./core.js";
-import { nearbyParticipants, openCharacter } from "./render_panels.js";
+import { $, formatMinute, clamp, crisisMetrics, crisisMood, el, formatWorldProperty, humanizeKey, state, toast, uiConfig } from "./core.js";
+import { openCharacter } from "./render_panels.js";
 
 
 export function sceneTheme(location) {
@@ -104,40 +104,55 @@ export function renderScene() {
     }
 
     const people = $("scene-people");
+    const street = $("street-life");
+    const watch = view.city_watch;
+    const hasWatch = Boolean(watch && Object.hasOwn(watch, "signals"));
+    street.classList.toggle("hidden", !hasWatch);
+    people.parentElement.classList.toggle("hidden", hasWatch);
+    const streetPeople = $("street-people");
+    const extra = $("street-extra-people");
+    streetPeople.replaceChildren();
+    extra.replaceChildren();
     people.replaceChildren();
+    const roster = hasWatch ? streetPeople : people;
     const participants = (view.nearby_participants || []).filter((item) => item.id !== state.playerId);
-    if (!participants.length) people.append(el("span", "scene-empty", "这里暂时没有别人。"));
-    for (const person of participants.slice(0, 8)) {
-      const chip = el("button", `person-chip${person.status && person.status !== "idle" ? "" : " person-idle"}`);
+    if (!participants.length) roster.append(el("span", "scene-empty", "此刻街上无人。可以去别处看看，或等一会儿。"));
+    $("street-count").textContent = view.resident_count ? `${view.resident_count} 人在附近` : "";
+    $("street-extra").classList.toggle("hidden", !hasWatch || participants.length <= 4);
+    $("street-extra-label").textContent = `再看附近 ${Math.max(0, participants.length - 4)} 人`;
+    for (const [index, person] of participants.entries()) {
+      if (!hasWatch && index >= 8) break;
+      const chip = el("button", "person-chip street-person");
       chip.type = "button";
-      chip.title = `和 ${person.name || person.id} 交谈`;
       chip.append(paintAvatar(el("span", "person-avatar"), person));
       const copy = el("span", "person-copy");
-      const active = person.status === "executing" || person.status === "paused";
       copy.append(el("strong", "", person.name || person.id));
-      copy.append(el("span", "", active ? (person.active_behavior_label || "正在忙碌") : "可以交谈"));
-      if (active) {
-        const progress = Number(person.initial_state?.action_progress);
-        if (Number.isFinite(progress)) {
-          const track = el("span", "person-mini-track");
-          const fill = el("i");
-          fill.style.width = `${Math.max(0, Math.min(100, progress * 100))}%`;
-          track.append(fill);
-          copy.append(track);
-        }
-      }
-      chip.classList.toggle("person-busy", active);
+      copy.append(el("span", "", person.active_behavior_label || person.role || "在附近"));
+      if (hasWatch && !person.can_talk) copy.append(el("small", "", "忙完再谈"));
       chip.append(copy);
-      chip.addEventListener("click", () => {
-        const select = $("talk-target");
-        const option = select ? [...select.options].find((item) => item.value === person.id) : null;
-        if (option || nearbyParticipants().some((item) => item.id === person.id)) {
-          openCharacter(person);
-        } else {
-          toast("对方不在可交谈距离内。", "error");
-        }
-      });
-      people.append(chip);
+      chip.addEventListener("click", () => openCharacter(person));
+      (hasWatch && index >= 4 ? extra : roster).append(chip);
+    }
+    if (hasWatch) {
+      const signals = $("city-signals");
+      signals.replaceChildren();
+      for (const signal of watch.signals.slice(0, 2)) {
+        const line = el("li");
+        line.append(el("strong", "", signal.place), el("span", "", signal.text));
+        signals.append(line);
+      }
+      if (!watch.signals.length) signals.append(el("li", "scene-empty", "各处照常开工。"));
+      const milestones = $("city-milestone-list");
+      milestones.replaceChildren();
+      $("city-milestones").classList.toggle("hidden", !watch.milestones.length);
+      for (const entry of watch.milestones) {
+        const row = el("li");
+        const clock = formatMinute(entry.minute);
+        row.append(el("small", "", clock), el("strong", "", entry.title));
+        row.append(el("p", "", entry.summary));
+        if (entry.actor) row.append(el("small", "", entry.actor));
+        milestones.append(row);
+      }
     }
 
     const resources = $("scene-resources");

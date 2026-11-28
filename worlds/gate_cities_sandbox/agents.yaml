@@ -963,8 +963,8 @@ agents:
   controller: bt
   ultimate_goal: 在稳定工资和学得一门手艺之间找合适的工位。
   initial_bt_ids:
-  - routine_resident
-  routine_bt_id: routine_resident
+  - routine_yard_artisan
+  routine_bt_id: routine_yard_artisan
   traits: {pragmatic: 0.6, cooperative: 0.65}
   needs: {hydration: 80.0, satiety: 79.0}
   initial_state:

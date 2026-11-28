@@ -148,6 +148,10 @@ class FakeServer:
     def player_state(self, player_id):
         return {"exists": player_id == "mira_id", "active": True, "world_minute": 7, "world_revision": 3}
 
+    def player_entry(self):
+        return {"status": "ok", "world_id": "world", "instance_id": self.instance_id,
+                "config_version": "test", "session_generation": "test-server"}
+
     def enter_player(self, body):
         return {"status": "accepted", "player_id": body["player_id"], "session_token": "player-token", "resumed": False}
 

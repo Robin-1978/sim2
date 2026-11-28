@@ -14,6 +14,7 @@ from ..world.player_template import PlayerTemplateError, parse_player_template
 from ..world.ui_text import UiText
 from .authoring import AuthoringService
 from .player_requirements import explain_requirement
+from .scene_life import city_watch, scene_people
 from .timeline import build_timeline, chronicle_event_types
 
 
@@ -579,25 +580,15 @@ def build_player_view(platform: Platform, player_id: str) -> dict[str, Any]:
     nearby = list(decision.get("nearby_entities", []) or [])
     bt_defs = {str(item.get("id")): item for item in platform.store.repositories.entities.get_definitions("bt_def")}
 
-    def _participant(item: dict[str, Any]) -> dict[str, Any]:
-        state = item.get("initial_state") or {}
-        behavior_id = str(state.get("active_behavior_id") or "")
-        if not behavior_id:
-            behavior_id = str((state.get("last_platform_result") or {}).get("behavior_ref") or "").removeprefix("behavior:")
-        behavior = bt_defs.get(behavior_id, {})
-        label = str(behavior.get("agent_label") or behavior.get("summary") or "")
-        portrait = platform.store.repositories.artwork.generated_for(str(item["id"]))
-        return {
-            **item,
-            "active_behavior": behavior_id,
-            "active_behavior_label": label,
-            **({"portrait": f"/world-art/{portrait}.webp"} if portrait else {}),
-        }
-
-    participants = [
-        _participant(item) for item in nearby
-        if str(item.get("type") or item.get("entity_type") or "") in {"agent", "player"}
-    ]
+    rules = platform.store.repositories.metadata.get("rules", {}) or {}
+    ui_settings = dict(setting.get("ui") or {})
+    if ui_settings.get("city_watch") and current_id:
+        nearby = platform.store.repositories.entities.entities_at_location(current_id)
+    resident_count, participants = scene_people(platform, agent, nearby, nodes, rules, ui_settings)
+    nearby = [
+        item for item in nearby if item["id"] != player_id
+        and item.get("type") not in {"agent", "player"}
+    ] + participants
     unavailable_actions = []
     for item in (decision.get("unavailable_behavior_diagnostics") or []):
         behavior_id = str(item.get("behavior_id") or "")
@@ -624,7 +615,6 @@ def build_player_view(platform: Platform, player_id: str) -> dict[str, Any]:
             "priority": priority,
         })
     unavailable_actions.sort(key=lambda row: (int(row.get("priority", 1)), str(row.get("label") or "")))
-    rules = platform.store.repositories.metadata.get("rules", {}) or {}
     item_labels = {
         str(key): str(value)
         for key, value in (rules.get("item_labels") or {}).items()
@@ -721,7 +711,9 @@ def build_player_view(platform: Platform, player_id: str) -> dict[str, Any]:
         "world_properties": world_properties,
         "world_property_labels": world_property_labels,
         "facilities": _facility_cards(platform, location_names, world_properties, world_property_labels),
-        "ui": dict(setting.get("ui") or {}),
+        "ui": ui_settings,
+        "city_watch": city_watch(platform, agent, world_properties, ui_settings),
+        "resident_count": resident_count,
         "alert_thresholds": alert_thresholds,
         "routes": routes,
         "map": map_view,
@@ -1121,9 +1113,16 @@ class ControlService:
                             break
             return {"status": "ok", "event": self._public_event(event, world_label), "related": related}
 
+    def player_dialogue_history(self, player_id: str, other_id: str = "") -> dict[str, Any]:
+        with self.platform.store.read_transaction():
+            exchanges = self.platform.store.repositories.social.list_dialogue_exchanges(
+                player_id, counterpart=other_id, limit=30,
+            )
+            return {"status": "ok", "exchanges": exchanges}
+
     def dialogue(self, speaker_id: str, listener_id: str, topic: str, message: str) -> dict[str, Any]:
         result = self.platform.submit_dialogue(speaker_id, listener_id, topic, message)
-        if result.get("status") == "accepted":
+        if result.get("status") == "accepted" and "reply" not in result:
             with self.platform.store.read_transaction():
                 repositories = self.platform.store.repositories
                 exchange = repositories.social.get_dialogue_exchange(result["dialogue_id"])

@@ -435,3 +435,97 @@ resources:
   initial_state:
     location_id: low_market
     quantity: 1
+- id: crew_table_slot
+  name: 工坊长桌材料位
+  type: resource
+  location_id: low_market
+  initial_state:
+    location_id: low_market
+    quantity: 1
+- id: tender_receipt_slot
+  name: 合同验收位
+  type: resource
+  location_id: low_market
+  initial_state: {location_id: low_market, quantity: 1}
+- id: tender_sign_slot
+  name: 工坊合同名额
+  type: resource
+  location_id: low_market
+  initial_state:
+    location_id: low_market
+    quantity: 1
+- id: tender_escrow
+  name: 合同托管款
+  type: resource
+  location_id: low_market
+  initial_state:
+    location_id: low_market
+    quantity: 0
+- id: tender_bonus
+  name: 合同准时奖
+  type: resource
+  location_id: low_market
+  initial_state:
+    location_id: low_market
+    quantity: 0
+- id: tender_hiring_fund
+  name: 旧站招工津贴
+  type: resource
+  location_id: low_market
+  initial_state:
+    location_id: low_market
+    quantity: 0
+- id: tender_batches_due
+  name: 尚待加工的批次
+  type: resource
+  location_id: low_market
+  initial_state:
+    location_id: low_market
+    quantity: 0
+- id: tender_yard_ready
+  name: 待运的路石货箱
+  type: resource
+  location_id: low_market
+  initial_state:
+    location_id: low_market
+    quantity: 0
+- id: court_tender_stones
+  name: 水庭采购路石
+  type: resource
+  location_id: low_fields
+  initial_state:
+    location_id: low_fields
+    quantity: 0
+- id: yard_tender_stones
+  name: 旧站采购路石
+  type: resource
+  location_id: old_yard
+  initial_state:
+    location_id: old_yard
+    quantity: 0
+
+- id: relief_desk
+  name: 水庭议事名额
+  type: resource
+  location_id: low_city
+  initial_state: {location_id: low_city, quantity: 1}
+- id: relief_food
+  name: 议事储备饭食
+  type: resource
+  location_id: low_city
+  initial_state: {location_id: low_city, quantity: 0}
+- id: relief_crew_food
+  name: 农圃短路工班饭食
+  type: resource
+  location_id: low_market
+  initial_state: {location_id: low_market, quantity: 0}
+- id: relief_jobs
+  name: 农圃短路班次
+  type: resource
+  location_id: low_market
+  initial_state: {location_id: low_market, quantity: 0}
+- id: relief_worksite
+  name: 农圃短路施工位
+  type: resource
+  location_id: low_market
+  initial_state: {location_id: low_market, quantity: 1}

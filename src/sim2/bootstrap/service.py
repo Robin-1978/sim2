@@ -1106,7 +1106,9 @@ def write_world_package_from_template(
     return output_dir
 
 
-def upgrade_instance(config_dir: Path, db_path: Path) -> dict[str, Any]:
+def upgrade_instance(
+    config_dir: Path, db_path: Path, *, preserve_controllers: bool = False,
+) -> dict[str, Any]:
     """Apply a world package's declarative config to an existing save.
 
     Definitions and presentation metadata are upserted; entities, agents,
@@ -1203,6 +1205,9 @@ def upgrade_instance(config_dir: Path, db_path: Path) -> dict[str, Any]:
             # such as "crew can take food and water" never reached a live save.
             configured_agents = load_yaml(config_dir, "agents.yaml", {}).get("agents", [])
             agents_updated = 0
+            controller_keys = ("bt_priority", "routine_bt_id") if preserve_controllers else (
+                "controller", "controller_fallback", "bt_priority", "routine_bt_id",
+            )
             for item in configured_agents:
                 if not isinstance(item, dict) or not item.get("id"):
                     continue
@@ -1214,7 +1219,7 @@ def upgrade_instance(config_dir: Path, db_path: Path) -> dict[str, Any]:
                 current = [str(value) for value in (existing_agent.get("initial_bt_ids") or [])]
                 additions = [str(value) for value in (item.get("initial_bt_ids") or []) if str(value) not in current]
                 controller_config = {
-                    key: item[key] for key in ("controller", "controller_fallback", "bt_priority", "routine_bt_id")
+                    key: item[key] for key in controller_keys
                     if key in item and item[key] != existing_agent.get(key)
                 }
                 if additions or controller_config:

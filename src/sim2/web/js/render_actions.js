@@ -97,10 +97,25 @@ export function activeOpportunity() {
       const presentation = spotlights[goal.id] || {};
       const refs = [...(goal.ready_behavior_refs || []), ...(venture ? goal.support_behavior_refs || [] : [])];
       const choices = [...new Set(refs)].map((ref) => actions.get(ref)).filter(Boolean);
-      if (choices.length) return { goal, choices: venture ? choices.slice(0, 3) : choices, presentation };
+      if (choices.length) return { goal, choices: venture ? choices.slice(0, presentation.desk ? 4 : 3) : choices, presentation };
       if (venture && presentation.blocker && !blocked) blocked = { goal, choices, presentation };
     }
     return blocked;
+}
+
+
+function renderMetrics(root, specs) {
+    const properties = state.view?.world_properties || {};
+    const inventory = state.view?.inventory || {};
+    root.replaceChildren();
+    for (const spec of specs || []) {
+      if (spec.show_when && !properties[spec.show_when]) continue;
+      if (spec.hide_when && properties[spec.hide_when]) continue;
+      const value = spec.item ? inventory[spec.item] : properties[spec.property];
+      const metric = el("div", "venture-metric");
+      metric.append(el("dt", "", spec.label), el("dd", "", `${value ?? 0}${spec.suffix || ""}`));
+      root.append(metric);
+    }
 }
 
 
@@ -108,27 +123,34 @@ export function renderVenture() {
     const venture = uiConfig().venture;
     const root = $("venture-brief");
     root.classList.toggle("hidden", !venture);
-    $("opportunity-panel").closest(".scene-panel").classList.toggle("scene-with-venture", Boolean(venture));
-    if (!venture) return;
-    $("venture-title").textContent = venture.title;
-    $("venture-purpose").textContent = venture.purpose;
-    const properties = state.view?.world_properties || {};
-    const inventory = state.view?.inventory || {};
-    const metrics = $("venture-metrics");
-    metrics.replaceChildren();
-    for (const spec of venture.metrics || []) {
-      if (spec.show_when && !properties[spec.show_when]) continue;
-      if (spec.hide_when && properties[spec.hide_when]) continue;
-      const value = spec.item ? inventory[spec.item] : properties[spec.property];
-      const metric = el("div", "venture-metric");
-      metric.append(el("dt", "", spec.label), el("dd", "", `${value ?? 0}${spec.suffix || ""}`));
-      metrics.append(metric);
+    $("scene-art").closest(".scene-panel").classList.toggle("scene-with-venture", Boolean(venture));
+    if (venture) {
+      $("venture-title").textContent = venture.title;
+      $("venture-purpose").textContent = venture.purpose;
+      renderMetrics($("venture-metrics"), venture.metrics);
+    }
+    const report = uiConfig().decision_report;
+    const event = state.view?.city_watch?.report;
+    $("decision-report").classList.toggle("hidden", !report || !event?.summary);
+    if (report && event) {
+      $("decision-report-title").textContent = report.title;
+      $("decision-report-summary").textContent = event.summary;
+      renderMetrics($("decision-report-metrics"), report.metrics);
     }
 }
 
 
 function renderOpportunity(opportunity) {
     const panel = $("opportunity-panel");
+    const desk = $("decision-desk");
+    const asDesk = Boolean(opportunity?.presentation?.desk);
+    desk.classList.toggle("hidden", !asDesk);
+    if (asDesk) {
+      if (panel.parentElement !== desk) desk.append(panel);
+    } else {
+      const footer = $("scene-resources").closest(".scene-footer");
+      if (panel.parentElement !== footer.parentElement) footer.before(panel);
+    }
     panel.classList.toggle("hidden", !opportunity);
     const list = $("opportunity-choices");
     const blocker = $("opportunity-blocker");
@@ -137,6 +159,11 @@ function renderOpportunity(opportunity) {
     if (!opportunity) return;
     const { goal, choices, presentation } = opportunity;
     $("opportunity-title").textContent = goal.label;
+    $("opportunity-stage").classList.toggle("hidden", !presentation.stage);
+    $("opportunity-stage").textContent = presentation.stage || "";
+    const metrics = $("opportunity-metrics");
+    renderMetrics(metrics, presentation.metrics);
+    metrics.classList.toggle("hidden", !metrics.childElementCount);
     $("opportunity-brief").textContent = goal.summary;
     if (!choices.length && presentation.blocker) {
       blocker.textContent = presentation.blocker;

@@ -80,6 +80,12 @@
         <dl id="summary-stats" class="summary-stats"></dl>
         <button id="scene-player-bag" type="button" class="summary-bag" aria-haspopup="dialog" aria-controls="player-drawer">行囊</button>
       </section>
+      <div id="decision-desk" class="decision-desk hidden"></div>
+      <section id="decision-report" class="panel decision-report hidden" aria-labelledby="decision-report-title">
+        <h2 id="decision-report-title"></h2>
+        <p id="decision-report-summary"></p>
+        <dl id="decision-report-metrics" class="venture-metrics"></dl>
+      </section>
       <section id="venture-brief" class="panel venture-brief hidden" aria-labelledby="venture-title">
         <div><h2 id="venture-title"></h2><p id="venture-purpose"></p></div>
         <dl id="venture-metrics" class="venture-metrics"></dl>
@@ -87,6 +93,24 @@
       <section id="recap-card" class="panel recap-card hidden" aria-live="polite">
         <div class="panel-title"><div><span class="eyebrow">回来啦</span><h2 id="recap-title">最近发生</h2></div><button id="recap-dismiss" class="text-button" type="button">收起</button></div>
         <div id="recap-list" class="recap-list"></div>
+      </section>
+      <section id="street-life" class="panel street-life hidden" aria-label="街巷近况">
+        <div class="street-local">
+          <div class="street-heading"><h2>街上遇见</h2><span id="street-count"></span></div>
+          <div id="street-people" class="people-row street-people"></div>
+          <details id="street-extra" class="street-extra hidden">
+            <summary id="street-extra-label"></summary>
+            <div id="street-extra-people" class="people-row street-people"></div>
+          </details>
+        </div>
+        <div class="street-city">
+          <div class="street-heading"><h2>城中近况</h2></div>
+          <ul id="city-signals" class="city-signals"></ul>
+          <details id="city-milestones">
+            <summary>最近发生的事</summary>
+            <ol id="city-milestone-list"></ol>
+          </details>
+        </div>
       </section>
       <section class="panel scene-panel">
         <div id="scene-countdown" class="scene-countdown hidden"></div>
@@ -114,11 +138,13 @@
           <div id="scene-objects" class="scene-objects"></div>
         </div>
         <section id="opportunity-panel" class="opportunity-panel hidden" aria-labelledby="opportunity-title">
+          <p id="opportunity-stage" class="opportunity-stage hidden"></p>
           <div class="opportunity-heading">
             <h2 id="opportunity-title"></h2>
             <span id="opportunity-deadline" class="opportunity-deadline"></span>
           </div>
           <p id="opportunity-brief"></p>
+          <dl id="opportunity-metrics" class="venture-metrics opportunity-metrics hidden"></dl>
           <div id="opportunity-choices" class="opportunity-choices"></div>
           <p id="opportunity-blocker" class="opportunity-blocker hidden"></p>
         </section>
@@ -460,6 +486,7 @@
           <div class="relationship-track"><span id="relationship-fill"></span></div>
           <p id="relationship-note" class="hint"></p>
         </div>
+        <div id="resident-interactions" class="resident-interactions hidden"></div>
         <span class="scene-label">对话记录</span>
         <div id="dialogue-list" class="dialogue-list character-dialogue" aria-live="polite"></div>
         <form id="talk-form" class="stack-form character-talk-form">

@@ -7,7 +7,9 @@ from uuid import uuid4
 
 from ..actions.institutions import describe_institution_terms, entity_quantity
 from ..evolution.memory import remember_role
+from ..behavior.controllers import controller_mode
 from ..world.lifecycle import is_inactive
+from .resident_conversations import authored_reply
 
 _ALLOCATION_FIELDS = frozenset({"minimum_per_subject", "contribution_share", "category"})
 _LEDGER_FIELDS = frozenset({"period", "selectors"})
@@ -594,7 +596,9 @@ class SocialRuntimeMixin:
         second_state = second.get("initial_state", {}) or {}
         return bool(first_state.get("location_id")) and first_state.get("location_id") == second_state.get("location_id")
 
-    def _available_for_instant_interaction(self, agent: dict[str, Any]) -> bool:
+    def _available_for_instant_interaction(
+        self, agent: dict[str, Any], definitions: dict[str, Any] | None = None,
+    ) -> bool:
         """Check interaction eligibility without interrupting an active BT."""
 
         state = agent.get("initial_state", {}) or {}
@@ -603,13 +607,16 @@ class SocialRuntimeMixin:
         if state.get("status") != "executing":
             return True
         action_id = state.get("active_action")
+        if action_id == "wait":
+            return True
+        if definitions is None:
+            definitions = {item["id"]: item for item in self.store.repositories.entities.get_definitions("action_def")}
         if action_id == "parallel":
             action_ids = [item.get("action_id") for item in (state.get("active_parallel_actions") or {}).values()]
-            definitions = {item["id"]: item for item in self.store.repositories.entities.get_definitions("action_def")}
             return bool(action_ids) and all(definitions.get(item, {}).get("interaction_policy") == "allow" for item in action_ids)
         if not action_id:
             return False
-        action = next((item for item in self.store.repositories.entities.get_definitions("action_def") if item.get("id") == action_id), None)
+        action = definitions.get(action_id)
         return bool(action and action.get("interaction_policy") == "allow")
 
     def _canonical_agent_id(self, value: Any) -> str | None:
@@ -728,6 +735,14 @@ class SocialRuntimeMixin:
             exchange_id = self.store.repositories.social.put_dialogue_exchange(speaker, listener, topic, minute, {"message": message, "source": "direct_text", "origin": origin})
             self.store.repositories.memory.put_memory(speaker, "dialogue", {"topic": topic, "message": message, "target_id": listener, "world_minute": minute, "dialogue_id": exchange_id, "importance": 0.35, "claim_status": "observed", "source_type": "own_statement"})
             self.store.repositories.memory.put_memory(listener, "testimony", {"topic": topic, "message": message, "speaker_id": speaker, "world_minute": minute, "dialogue_id": exchange_id, "importance": 0.45, "pending_decision": True, "claim_status": "reported", "source_type": "testimony", **testimony})
+            reply_id = None
+            if origin == "player" and controller_mode(listener_agent) == "bt":
+                reply = authored_reply(self.store, self.conditions, listener_agent, topic)
+                if reply:
+                    reply_id = self.store.repositories.social.put_dialogue_exchange(
+                        listener, speaker, topic, minute,
+                        {"message": reply, "source": "resident_conversation", "in_reply_to": exchange_id},
+                    )
             self._apply_configured_need_effect(speaker_agent, "dialogue.completed")
             self._apply_configured_need_effect(listener_agent, "dialogue.completed")
             self.apply_configured_relationship_effect(speaker_agent, listener_agent, "dialogue.completed", minute)
@@ -735,6 +750,8 @@ class SocialRuntimeMixin:
             self.store.repositories.entities.update_agent(listener, listener_agent)
             event_id = self._context.services["events"].append("dialogue.completed", speaker, minute, {"dialogue_id": exchange_id, "target_id": listener, "topic": topic, "summary": "A direct exchange was recorded as unverified testimony.", "activation": "recipient_next_decision_or_reflection", "duration_minutes": 0, "priority": "normal", **testimony})
             result = {"status": "accepted", "intent_id": intent_id, "dialogue_id": exchange_id, "event_id": event_id, "topic": topic}
+            if reply_id is not None:
+                result["reply"] = {"status": "completed", "dialogue_id": reply_id}
             self.store.repositories.evolution.finish_intent(intent_id, "accepted", result)
         return result
 

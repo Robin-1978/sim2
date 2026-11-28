@@ -6,7 +6,8 @@ export function tokenFor(path) {
     if (path.startsWith("/api/v1/runtime/") || path.startsWith("/api/v1/instances") || path.startsWith("/api/v1/authoring/") || path.startsWith("/api/v1/operator/")) {
       return state.operatorToken || state.playerToken;
     }
-    if (path.startsWith("/api/v1/player/")) {
+    if (path.startsWith("/api/v1/player/") || path.startsWith("/api/v1/observer/")
+        || path.startsWith("/api/v1/events/") || path.startsWith("/api/v1/map")) {
       return state.playerToken || state.operatorToken;
     }
     return state.operatorToken || state.playerToken;

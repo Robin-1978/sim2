@@ -46,14 +46,17 @@ class SocialRepository:
             **json.loads(row["data_json"] or "{}"),
         }
 
-    def list_dialogue_exchanges(self, agent_id: str, *, limit: int = 20, after_id: int = 0) -> list[dict[str, Any]]:
+    def list_dialogue_exchanges(self, agent_id: str, *, limit: int = 20, after_id: int = 0, counterpart: str = "") -> list[dict[str, Any]]:
         """Return a chronological transcript visible to one participant."""
 
+        clause = "(speaker_id=? OR listener_id=?)"
+        params: tuple[Any, ...] = (agent_id, agent_id)
+        if counterpart:
+            clause = "((speaker_id=? AND listener_id=?) OR (speaker_id=? AND listener_id=?))"
+            params = (agent_id, counterpart, counterpart, agent_id)
         rows = self.store.connection.execute(
-            "SELECT id FROM dialogue_exchange "
-            "WHERE (speaker_id=? OR listener_id=?) AND id>? "
-            "ORDER BY id DESC LIMIT ?",
-            (str(agent_id), str(agent_id), max(0, int(after_id)), max(1, min(int(limit), 100))),
+            f"SELECT id FROM dialogue_exchange WHERE {clause} AND id>? ORDER BY id DESC LIMIT ?",
+            (*params, max(0, int(after_id)), max(1, min(int(limit), 100))),
         ).fetchall()
         exchanges = [self.get_dialogue_exchange(row["id"]) for row in rows]
         return [item for item in reversed(exchanges) if item is not None]

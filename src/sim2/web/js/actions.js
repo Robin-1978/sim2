@@ -80,6 +80,22 @@ export function enterGame() {
   }
 
 
+function usePlayerSession(result, fallbackId, fallbackName) {
+    state.playerId = String(result.player_id || fallbackId);
+    state.playerName = String(result.name || fallbackName || state.playerId);
+    state.playerToken = result.session_token || null;
+    if (result.session_generation) {
+      state.entry = { ...state.entry, instance_id: result.instance_id, session_generation: result.session_generation };
+    }
+    storageSet(PLAYER_KEY, {
+      id: state.playerId, token: state.playerToken, name: state.playerName,
+      instanceId: result.instance_id || state.entry?.instance_id,
+      sessionGeneration: result.session_generation || state.entry?.session_generation,
+    });
+    restartStream();
+}
+
+
 export async function submitEntry(button, forcedPlayerId = null) {
     const resumingId = String(forcedPlayerId || "").trim();
     const name = resumingId ? "" : String($("entry-name").value || "").trim();
@@ -96,16 +112,12 @@ export async function submitEntry(button, forcedPlayerId = null) {
           : { origin_id: originId, name };
         const result = await write("/api/v1/player/enter", payload);
         if (result.status !== "accepted") throw new Error(result.message || "无法进入世界");
-        state.playerId = result.player_id || resumingId;
-        state.playerName = result.name || name || state.playerId;
-        state.playerToken = result.session_token || null;
-        restartStream();
+        usePlayerSession(result, resumingId, name);
         state.entry = {
           ...(state.entry || {}),
           players: [{ id: state.playerId, name: state.playerName, status: "idle" }],
           can_create_player: false,
         };
-        storageSet(PLAYER_KEY, { id: state.playerId, token: state.playerToken, name: state.playerName });
         enterGame();
         showGameScreen("scene");
         await Promise.all([loadView(), loadRuntime()]);
@@ -207,10 +219,16 @@ export async function createWorldInstance(button) {
 export async function restorePlayer() {
     const saved = storageGet(PLAYER_KEY, null);
     if (!saved?.id || !saved?.token || !worldIsOpen()) return false;
+    const entry = state.entry;
+    if (entry?.instance_id && saved.instanceId && entry.instance_id !== saved.instanceId) return false;
+    if (entry?.session_generation && !entry.players?.some((person) => person.id === saved.id)) return false;
     state.playerId = saved.id;
     state.playerName = saved.name || saved.id;
     state.playerToken = saved.token;
     try {
+      if (entry?.session_generation && saved.sessionGeneration !== entry.session_generation) {
+        if (!await recoverPlayerSession()) throw new Error("无法恢复角色会话。");
+      }
       await loadView();
       enterGame();
       await Promise.allSettled([loadFeed(), loadDialogue(), loadTrades(), loadRuntime()]);
@@ -219,7 +237,6 @@ export async function restorePlayer() {
       state.playerId = null;
       state.playerToken = null;
       state.view = null;
-      storageSet(PLAYER_KEY, null);
       return false;
     }
   }
@@ -232,24 +249,29 @@ export function isSessionError(error) {
   }
 
 
-export async function recoverPlayerSession() {
+let pendingPlayerRenewal = null;
+
+export function recoverPlayerSession() {
     const saved = storageGet(PLAYER_KEY, null);
-    if (!saved?.id) return false;
-    try {
-      // A server restart drops in-memory sessions; the player row is durable.
-      // Re-enter by id to get a fresh session without creating a new character.
-      const result = await write("/api/v1/player/enter", { player_id: saved.id });
-      if (result.status !== "accepted" || !result.session_token) return false;
-      state.playerId = String(result.player_id || saved.id);
-      state.playerName = String(result.name || saved.name || state.playerId);
-      state.playerToken = String(result.session_token);
-      storageSet(PLAYER_KEY, { id: state.playerId, token: state.playerToken, name: state.playerName });
-      restartStream();
-      return true;
-    } catch (error) {
-      return false;
-    }
-  }
+    if (!saved?.id || state.playerId !== saved.id) return Promise.resolve(false);
+    if (pendingPlayerRenewal) return pendingPlayerRenewal;
+    pendingPlayerRenewal = (async () => {
+      try {
+        const entry = await request("/api/v1/player/entry");
+        if (entry.instance_id && saved.instanceId && entry.instance_id !== saved.instanceId) return false;
+        if (!entry.players?.some((person) => person.id === saved.id)) return false;
+        const result = await write("/api/v1/player/enter", { player_id: saved.id });
+        if (result.status !== "accepted" || !result.session_token || state.playerId !== saved.id) return false;
+        usePlayerSession(result, saved.id, saved.name);
+        return true;
+      } catch (error) {
+        return false;
+      } finally {
+        pendingPlayerRenewal = null;
+      }
+    })();
+    return pendingPlayerRenewal;
+}
 
 
 function expirePlayerSession() {
@@ -656,11 +678,10 @@ export async function loadDialogue(characterId = state.selectedCharacter?.id || 
     const root = $("dialogue-list");
     if (!root) return;
     try {
-      const response = await request("/api/v1/observer/dialogue?limit=80");
-      const exchanges = (response.exchanges || [])
-        .filter((item) => item.speaker_id === state.playerId || item.listener_id === state.playerId)
-        .filter((item) => !characterId || item.speaker_id === characterId || item.listener_id === characterId)
-        .slice(-30);
+      const query = characterId ? `?with=${encodeURIComponent(characterId)}` : "";
+      const response = await request(`/api/v1/player/${encodeURIComponent(state.playerId)}/dialogue${query}`);
+      if (state.selectedCharacter?.id && state.selectedCharacter.id !== characterId) return;
+      const exchanges = response.exchanges || [];
       root.replaceChildren();
       const typing = state.dialogueTyping && (!characterId || state.dialogueTypingTarget === characterId);
       if (!exchanges.length && !typing) {
@@ -673,7 +694,7 @@ export async function loadDialogue(characterId = state.selectedCharacter?.id || 
         const bubble = el("div", `dialogue-bubble ${mine ? "mine" : "theirs"}`);
         const speaker = mine ? "你" : (item.speaker || personName(item.speaker_id));
         bubble.append(el("strong", "", speaker));
-        if (item.topic && item.topic !== "general") bubble.append(el("span", "dialogue-topic", item.topic));
+        if (item.topic && item.topic !== "general" && !["work", "home", "greet"].includes(item.topic)) bubble.append(el("span", "dialogue-topic", item.topic));
         bubble.append(el("p", "", item.message || ""));
         root.append(bubble);
       }
@@ -690,40 +711,36 @@ export async function loadDialogue(characterId = state.selectedCharacter?.id || 
   }
 
 
-export async function sendDialogue(form) {
-    const target = $("talk-target")?.value;
-    const message = String($("talk-message")?.value || "").trim();
+export async function sendDialogue({
+    target = $("talk-target")?.value, topic = "general",
+    message = String($("talk-message")?.value || "").trim(), button = $("talk-send"),
+} = {}) {
     if (!target) return toast("附近没有可交谈的人。", "error");
     if (!message) return toast("先说点什么。", "error");
-    const button = $("talk-send");
     await withPending(button, async () => {
-      state.dialogueTyping = true;
-      state.dialogueTypingTarget = target;
-      if (state.dialogueReplyTimer) window.clearTimeout(state.dialogueReplyTimer);
-      state.dialogueReplyTimer = window.setTimeout(() => {
-        if (!state.dialogueTyping) return;
-        state.dialogueTyping = false;
-        state.dialogueReplyTimer = null;
-        loadDialogue(target).catch(() => {});
-        toast("NPC 回复暂不可用。", "error");
-      }, 30000);
-      await loadDialogue(target);
       try {
         const result = await write(`/api/v1/player/${encodeURIComponent(state.playerId)}/dialogue`, {
           listener_id: target,
-          topic: "general",
+          topic,
           message,
           provider: selectedProvider() || undefined,
         });
         if (result.status !== "accepted") throw new Error(result.message || "对话未发送");
-        $("talk-message").value = "";
+        if (topic === "general") $("talk-message").value = "";
         const reply = result.reply || {};
-        if (reply.status === "rejected") {
-          state.dialogueTyping = false;
-          if (state.dialogueReplyTimer) window.clearTimeout(state.dialogueReplyTimer);
-          state.dialogueReplyTimer = null;
+        state.dialogueTyping = reply.status === "pending";
+        state.dialogueTypingTarget = target;
+        if (state.dialogueReplyTimer) window.clearTimeout(state.dialogueReplyTimer);
+        state.dialogueReplyTimer = null;
+        if (state.dialogueTyping) {
+          state.dialogueReplyTimer = window.setTimeout(() => {
+            state.dialogueTyping = false;
+            state.dialogueReplyTimer = null;
+            loadDialogue(target).catch(() => {});
+          }, 30000);
+        } else if (reply.status === "recorded") {
+          toast("对方听见了。", "ok");
         }
-        toast(reply.status === "pending" ? "消息已发送，对方正在回复…" : "对话已发送。", reply.status === "rejected" ? "error" : "ok");
         await Promise.allSettled([loadView(), loadFeed()]);
         const selected = nearbyParticipants().find((item) => item.id === target);
         if (selected && state.selectedCharacter?.id === target) updateCharacterSheet(selected);

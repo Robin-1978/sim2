@@ -42,6 +42,7 @@ ROUTES: tuple[Route, ...] = (
     Route("POST", "/api/v1/player/{player_id}/wait", "player", player.player_wait, request_model="wait", idempotent=True, status=202, name="player.wait"),
     Route("GET", "/api/v1/player/{player_id}/tasks/{task_id}", "player", player.player_task, response_model="task", name="player.task"),
     Route("POST", "/api/v1/player/{player_id}/tasks/{task_id}/cancel", "player", player.player_task_cancel, request_model="reason", idempotent=True, name="player.task.cancel"),
+    Route("GET", "/api/v1/player/{player_id}/dialogue", "player", player.dialogue_history, name="player.dialogue.history"),
     Route("POST", "/api/v1/player/{player_id}/dialogue", "player", player.player_dialogue, request_model="dialogue", idempotent=True, name="player.dialogue"),
     Route("GET", "/api/v1/player/{player_id}/trades", "player", player.player_trades, name="player.trades"),
     Route("POST", "/api/v1/player/{player_id}/trades", "player", player.player_trade_offer, request_model="trade_offer", idempotent=True, name="player.trade.offer"),

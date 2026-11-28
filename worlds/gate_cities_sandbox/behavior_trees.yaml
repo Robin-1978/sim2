@@ -1661,6 +1661,8 @@ behavior_trees:
     - {type: behavior, behavior_id: seek_yard_food}
     - {type: behavior, behavior_id: seek_mine_food}
     - {type: behavior, behavior_id: rest_short}
+    - {type: behavior, behavior_id: relief_path_finish}
+    - {type: behavior, behavior_id: relief_path_first}
     - {type: behavior, behavior_id: move_market}
     - {type: behavior, behavior_id: market_shift}
     - {type: behavior, behavior_id: stock_mine}
@@ -2110,6 +2112,7 @@ behavior_trees:
   description: 保留工坊和周转金，在途货照常入仓。
   entry_conditions:
   - actor.alive
+  - world.tender_mode == 0
   - world.shop_open == 1
   - world.shop_staffed == 1
   nodes:
@@ -2130,6 +2133,7 @@ behavior_trees:
   description: 从工坊账付一枚钱，把两份料从灰脊送入坊市。门线可用时会走快路。
   entry_conditions:
   - actor.alive
+  - world.tender_mode == 0
   - world.shop_open == 1
   - world.shop_cash >= 1
   - world.shop_dispatch >= 1
@@ -2171,6 +2175,7 @@ behavior_trees:
   description: 按已出资订单买矿并送入坊市。
   entry_conditions:
   - actor.alive
+  - world.tender_mode == 0
   - world.shop_open == 1
   - world.shop_cash >= 1
   - world.shop_dispatch >= 1
@@ -2229,6 +2234,7 @@ behavior_trees:
   description: 消耗两份矿料。水庭付三枚钱，你领一枚工钱。
   entry_conditions:
   - actor.alive
+  - world.tender_mode == 0
   - world.shop_open == 1
   - world.market_ore >= 2
   - world.shop_cash >= 1
@@ -2253,6 +2259,7 @@ behavior_trees:
   description: 使用当前订单和账面材料完成一批。
   entry_conditions:
   - actor.alive
+  - world.tender_mode == 0
   - world.shop_open == 1
   - world.market_ore >= 2
   - world.shop_cash >= 1
@@ -2278,6 +2285,7 @@ behavior_trees:
   description: 从工坊账领取一枚已赚到的钱，仍留两枚以上周转。
   entry_conditions:
   - actor.alive
+  - world.tender_mode == 0
   - world.shop_open == 1
   - world.shop_cash >= 3
   - world.shop_dividends < world.shop_batches
@@ -2362,6 +2370,8 @@ behavior_trees:
     - type: behavior
       behavior_id: visit_clinic
     - type: behavior
+      behavior_id: crew_supper
+    - type: behavior
       behavior_id: sip
     - type: behavior
       behavior_id: eat
@@ -2369,6 +2379,14 @@ behavior_trees:
       behavior_id: rest_short
     - type: behavior
       behavior_id: shop_receive_crew
+    - type: behavior
+      behavior_id: tender_unload
+    - type: behavior
+      behavior_id: tender_receive_yard
+    - type: behavior
+      behavior_id: tender_haul
+    - type: behavior
+      behavior_id: tender_supply
     - type: behavior
       behavior_id: shop_supply_crew
     - type: behavior
@@ -2390,11 +2408,17 @@ behavior_trees:
     - type: behavior
       behavior_id: visit_clinic
     - type: behavior
+      behavior_id: crew_supper
+    - type: behavior
       behavior_id: sip
     - type: behavior
       behavior_id: eat
     - type: behavior
       behavior_id: rest_short
+    - type: behavior
+      behavior_id: tender_mason_court
+    - type: behavior
+      behavior_id: tender_mason_yard
     - type: behavior
       behavior_id: shop_process_crew
     - type: behavior
@@ -2402,3 +2426,517 @@ behavior_trees:
     - type: wait
       minutes: 25
   cooldown_minutes: 0
+
+- id: set_up_crew_table
+  version: 1
+  agent_label: 给班组搭张长桌
+  summary: 花两枚钱。以后班组能在坊市吃饭，少跑一趟水庭。
+  description: 花两枚钱。以后班组能在坊市吃饭，少跑一趟水庭。
+  entry_conditions:
+  - actor.alive
+  - world.crew_table == 0
+  - world.shop_open == 1
+  - world.low_wages <= 168
+  nodes:
+  - {type: action, action_id: travel_to, parameters: {location_id: low_market}}
+  - {type: action, action_id: set_up_crew_table, parameters: {}}
+  cooldown_minutes: 0
+  goal_tags: [building]
+
+- id: crew_supper
+  version: 1
+  agent_label: 在工坊长桌吃饭
+  summary: 从水庭饭食配给取一份，恢复饱足和归属感。
+  description: 从水庭饭食配给取一份，恢复饱足和归属感。
+  entry_conditions:
+  - actor.alive
+  - world.crew_table == 1
+  - world.low_food >= 4
+  - actor.need.satiety < 65
+  nodes:
+  - {type: action, action_id: travel_to, parameters: {location_id: low_market}}
+  - {type: action, action_id: crew_supper, parameters: {}}
+  cooldown_minutes: 0
+  goal_tags: []
+
+- id: sign_court_tender
+  version: 1
+  agent_label: 水庭公共采购
+  summary: 预付三枚，后两批每批三枚。就地验收，石料留给水庭。420 分钟内交齐，另付一枚。
+  description: 预付三枚，后两批每批三枚。就地验收，石料留给水庭。420 分钟内交齐，另付一枚。
+  entry_conditions:
+  - actor.alive
+  - world.shop_road == 1
+  - world.tender_mode == 0
+  - world.shop_cash >= 1
+  - world.shop_cash <= 36
+  - world.court_tender_stones <= 12
+  - world.tender_sign_slot == 1
+  - world.low_wages >= 10
+  nodes:
+  - {type: action, action_id: travel_to, parameters: {location_id: low_market}}
+  - {type: action, action_id: sign_court_tender, parameters: {}}
+  cooldown_minutes: 0
+  goal_tags: [decision]
+
+- id: sign_yard_tender
+  version: 1
+  agent_label: 旧站联合采购
+  summary: 预付四枚，后两批每批三枚。须把石料送到货场，附带一枚招工津贴。420 分钟内交齐另付一枚。
+  description: 预付四枚，后两批每批三枚。须把石料送到货场，附带一枚招工津贴。420 分钟内交齐另付一枚。
+  entry_conditions:
+  - actor.alive
+  - world.shop_road == 1
+  - world.tender_mode == 0
+  - world.shop_cash >= 1
+  - world.shop_cash <= 36
+  - world.yard_tender_stones <= 12
+  - world.tender_sign_slot == 1
+  - world.yard_wages >= 2
+  - world.settlement_fund >= 10
+  nodes:
+  - {type: action, action_id: travel_to, parameters: {location_id: low_market}}
+  - {type: action, action_id: sign_yard_tender, parameters: {}}
+  cooldown_minutes: 0
+  goal_tags: [decision]
+
+- id: tender_supply
+  version: 1
+  agent_label: 买六份合同矿料
+  summary: 从工坊账付三枚，运回三批路石所需的矿料。
+  description: 从工坊账付三枚，运回三批路石所需的矿料。
+  entry_conditions:
+  - actor.alive
+  - world.tender_mode > 0
+  - world.tender_batches_due >= 1
+  - world.market_ore < 2
+  - world.mine_ore >= 6
+  - world.mine_wages <= 167
+  - world.shop_cash >= 3
+  - world.shop_dispatch >= 1
+  - actor.inventory.tender_ore == 0
+  - (actor.role == 'player' or world.shop_staffed == 1)
+  nodes:
+  - {type: action, action_id: travel_to, parameters: {location_id: mine_exchange}}
+  - {type: action, action_id: tender_buy_ore, parameters: {}}
+  - type: selector
+    children:
+    - {type: action, action_id: cross_market_out, parameters: {destination_id: low_market}}
+    - {type: action, action_id: travel_to, parameters: {location_id: low_market}}
+  - {type: action, action_id: tender_unload_ore, parameters: {}}
+  cooldown_minutes: 0
+  goal_tags: [trade]
+
+- id: tender_unload
+  version: 1
+  agent_label: 把矿料送回坊市
+  summary: 已付款的货先入仓，释放采购名额。
+  description: 已付款的货先入仓，释放采购名额。
+  entry_conditions:
+  - actor.alive
+  - actor.inventory.tender_ore >= 6
+  - world.market_ore <= 29
+  nodes:
+  - type: selector
+    children:
+    - {type: action, action_id: cross_market_out, parameters: {destination_id: low_market}}
+    - {type: action, action_id: travel_to, parameters: {location_id: low_market}}
+  - {type: action, action_id: tender_unload_ore, parameters: {}}
+  cooldown_minutes: 0
+  goal_tags: [trade]
+
+- id: tender_mason_yard
+  version: 1
+  agent_label: 打制一箱旧站路石
+  summary: 用两份坊市矿，工人领一枚。成品装箱后等人送往旧站。
+  description: 用两份坊市矿，工人领一枚。成品装箱后等人送往旧站。
+  entry_conditions:
+  - actor.alive
+  - world.tender_mode == 2
+  - world.tender_yard_ready < 3
+  - world.market_ore >= 2
+  - world.shop_cash >= 1
+  - world.shop_bench >= 1
+  - world.tender_batches_due >= 1
+  - (actor.role == 'player' or world.shop_staffed == 1)
+  nodes:
+  - {type: action, action_id: travel_to, parameters: {location_id: low_market}}
+  - {type: action, action_id: tender_pack_stones, parameters: {}}
+  cooldown_minutes: 0
+  goal_tags: [craft]
+
+- id: tender_mason_court
+  version: 1
+  agent_label: 加工并交给水庭
+  summary: 用两份矿打一批路石，在工坊完成验收。
+  description: 用两份矿打一批路石，在工坊完成验收。
+  entry_conditions:
+  - actor.alive
+  - world.tender_mode == 1
+  - world.market_ore >= 2
+  - world.shop_cash >= 1
+  - world.shop_bench >= 1
+  - world.tender_batches_due >= 1
+  - (actor.role == 'player' or world.shop_staffed == 1)
+  nodes:
+  - {type: action, action_id: travel_to, parameters: {location_id: low_market}}
+  - type: selector
+    children:
+    - {type: action, action_id: tender_court_advance, parameters: {}}
+    - {type: action, action_id: tender_court_payment, parameters: {}}
+  cooldown_minutes: 0
+  goal_tags: [craft]
+
+- id: tender_haul
+  version: 1
+  agent_label: 把一箱路石运到旧站
+  summary: 实物抵达铁轨货场才计交货。
+  description: 实物抵达铁轨货场才计交货。
+  entry_conditions:
+  - actor.alive
+  - world.tender_mode == 2
+  - world.tender_yard_ready >= 1
+  - actor.inventory.tender_yard_crate == 0
+  - (actor.role == 'player' or world.shop_staffed == 1)
+  nodes:
+  - {type: action, action_id: travel_to, parameters: {location_id: low_market}}
+  - {type: action, action_id: tender_load_stones, parameters: {}}
+  - {type: action, action_id: travel_to, parameters: {location_id: old_yard}}
+  - type: selector
+    children:
+    - {type: action, action_id: tender_yard_advance, parameters: {}}
+    - {type: action, action_id: tender_yard_payment, parameters: {}}
+  cooldown_minutes: 0
+  goal_tags: [trade]
+
+- id: tender_receive_yard
+  version: 1
+  agent_label: 送达随身路石
+  summary: 把已经装车的路石交到铁轨货场。
+  description: 把已经装车的路石交到铁轨货场。
+  entry_conditions:
+  - actor.alive
+  - world.tender_mode == 2
+  - actor.inventory.tender_yard_crate >= 1
+  - (actor.role == 'player' or world.shop_staffed == 1)
+  nodes:
+  - {type: action, action_id: travel_to, parameters: {location_id: old_yard}}
+  - type: selector
+    children:
+    - {type: action, action_id: tender_yard_advance, parameters: {}}
+    - {type: action, action_id: tender_yard_payment, parameters: {}}
+  cooldown_minutes: 0
+  goal_tags: [trade]
+
+- id: tender_hire
+  version: 1
+  agent_label: 到坊市接新工位
+  summary: 带着旧站的招工约定，到坊市领工钱。
+  description: 带着旧站的招工约定，到坊市领工钱。
+  entry_conditions:
+  - actor.alive
+  - world.tender_mode == 2
+  - world.tender_hired == 0
+  - world.tender_hiring_fund == 1
+  nodes:
+  - {type: action, action_id: travel_to, parameters: {location_id: low_market}}
+  - {type: action, action_id: tender_hire, parameters: {}}
+  cooldown_minutes: 0
+  goal_tags: []
+
+- id: tender_wait
+  version: 1
+  agent_label: 让班组运转一小时
+  summary: 班组自己处理在途货和工位。你也可以去别处处理自己的事。
+  description: 班组自己处理在途货和工位。你也可以去别处处理自己的事。
+  entry_conditions:
+  - actor.alive
+  - world.tender_mode > 0
+  - world.tender_delivered < 3
+  nodes:
+  - {type: wait, minutes: 60}
+  cooldown_minutes: 0
+  goal_tags: [work]
+
+- id: tender_close
+  version: 1
+  agent_label: 结清合同
+  summary: 三批已验收，结清奖款，交出的路石可以投入公共工程。
+  description: 三批已验收，结清奖款，交出的路石可以投入公共工程。
+  entry_conditions:
+  - actor.alive
+  - world.tender_mode > 0
+  - world.tender_delivered == 3
+  - world.tender_bonus == 1
+  nodes:
+  - {type: action, action_id: travel_to, parameters: {location_id: low_market}}
+  - type: selector
+    children:
+    - {type: action, action_id: tender_close_court_ontime, parameters: {}}
+    - {type: action, action_id: tender_close_court_late, parameters: {}}
+    - {type: action, action_id: tender_close_yard_ontime, parameters: {}}
+    - {type: action, action_id: tender_close_yard_late, parameters: {}}
+  cooldown_minutes: 0
+  goal_tags: [trade]
+
+- id: tender_irrigate
+  version: 1
+  agent_label: 替农圃砌引水渠
+  summary: 用六份水庭路石砌渠。此后水庭有余水时，每小时向农圃调两份。
+  description: 用六份水庭路石砌渠。此后水庭有余水时，每小时向农圃调两份。
+  entry_conditions:
+  - actor.alive
+  - world.tender_mode == 0
+  - world.court_tender_stones >= 6
+  - world.tender_irrigate == 0
+  nodes:
+  - {type: action, action_id: travel_to, parameters: {location_id: low_fields}}
+  - {type: action, action_id: tender_irrigate, parameters: {}}
+  cooldown_minutes: 0
+  goal_tags: [building]
+
+- id: tender_resurface
+  version: 1
+  agent_label: 铺通旧站装货道
+  summary: 用六份旧站路石铺装货道。铁轨货场到旧站只需两分钟。
+  description: 用六份旧站路石铺装货道。铁轨货场到旧站只需两分钟。
+  entry_conditions:
+  - actor.alive
+  - world.tender_mode == 0
+  - world.yard_tender_stones >= 6
+  - world.tender_resurface == 0
+  nodes:
+  - {type: action, action_id: travel_to, parameters: {location_id: old_yard}}
+  - {type: action, action_id: tender_resurface, parameters: {}}
+  cooldown_minutes: 0
+  goal_tags: [building]
+
+- id: routine_yard_artisan
+  version: 1
+  agent_label: 在货场或坊市当班
+  summary: 有合同便到坊市上工，其余时间照顾生活并在旧站出工。
+  entry_conditions:
+  - actor.alive
+  nodes:
+  - type: selector
+    children:
+    - {type: behavior, behavior_id: urgent_recovery}
+    - {type: behavior, behavior_id: visit_clinic}
+    - {type: behavior, behavior_id: tender_hire}
+    - {type: behavior, behavior_id: tender_mason_yard}
+    - {type: behavior, behavior_id: routine_resident}
+    - {type: wait, minutes: 25}
+  cooldown_minutes: 0
+
+- id: relief_buy_yard
+  version: 1
+  agent_label: 向旧站买十份饭
+  summary: 低城薪金库付 6 枚，旧站留下至少 10 份饭。拿到的 10 份够放饭和开工两件事。
+  description: 低城薪金库付 6 枚，旧站留下至少 10 份饭。拿到的 10 份够放饭和开工两件事。
+  entry_conditions:
+  - actor.alive
+  - world.shop_road == 1
+  - world.relief_phase == 0
+  - world.relief_reopen == 0
+  - world.low_food <= 6
+  - world.relief_food == 0
+  - world.relief_desk >= 1
+  - world.yard_food >= 20
+  - world.low_wages >= 6
+  - world.yard_wages <= 164
+  nodes:
+  - {type: action, action_id: travel_to, parameters: {location_id: low_city}}
+  - {type: action, action_id: relief_buy_yard, parameters: {}}
+  cooldown_minutes: 0
+  goal_tags: [decision]
+
+- id: relief_early_harvest
+  version: 1
+  agent_label: 用井水催收六份饭
+  summary: 用 4 份井水和 2 份燃料抢收，筹出 6 份饭。保住薪金，只够优先做一件事。
+  description: 用 4 份井水和 2 份燃料抢收，筹出 6 份饭。保住薪金，只够优先做一件事。
+  entry_conditions:
+  - actor.alive
+  - world.shop_road == 1
+  - world.relief_phase == 0
+  - world.relief_reopen == 0
+  - world.low_food <= 6
+  - world.relief_food == 0
+  - world.relief_desk >= 1
+  - world.low_water >= 18
+  - world.field_fuel >= 2
+  - world.farm_water <= 22
+  nodes:
+  - {type: action, action_id: travel_to, parameters: {location_id: low_city}}
+  - {type: action, action_id: relief_early_harvest, parameters: {}}
+  cooldown_minutes: 0
+  goal_tags: [decision]
+
+- id: relief_feed_neighborhood
+  version: 1
+  agent_label: 先给街坊开饭
+  summary: 把储备的 6 份饭放进水庭公粮。居民可以马上领取。
+  description: 把储备的 6 份饭放进水庭公粮。居民可以马上领取。
+  entry_conditions:
+  - actor.alive
+  - world.relief_phase == 1
+  - world.relief_desk >= 1
+  - world.relief_handout == 0
+  - world.relief_food >= 6
+  - world.low_food <= 42
+  nodes:
+  - {type: action, action_id: travel_to, parameters: {location_id: low_city}}
+  - {type: action, action_id: relief_feed_neighborhood, parameters: {}}
+  cooldown_minutes: 0
+  goal_tags: [decision]
+
+- id: relief_commission_path
+  version: 1
+  agent_label: 留四份饭换农圃近路
+  summary: 留足两个有饭吃的工班。工班完工后，坊市到农圃由 6 分钟缩至 2 分钟。
+  description: 留足两个有饭吃的工班。工班完工后，坊市到农圃由 6 分钟缩至 2 分钟。
+  entry_conditions:
+  - actor.alive
+  - world.relief_phase == 1
+  - world.relief_desk >= 1
+  - world.relief_work == 0
+  - world.relief_food >= 4
+  - world.relief_path == 0
+  - world.relief_jobs == 0
+  - world.relief_path_shifts == 0
+  - world.relief_crew_food == 0
+  nodes:
+  - {type: action, action_id: travel_to, parameters: {location_id: low_city}}
+  - {type: action, action_id: relief_commission_path, parameters: {}}
+  cooldown_minutes: 0
+  goal_tags: [decision]
+
+- id: relief_path_first
+  version: 1
+  agent_label: 铺农圃近路
+  summary: 领两份饭，和班组铺出农圃小路。
+  description: 领两份饭，和班组铺出农圃小路。
+  entry_conditions:
+  - actor.alive
+  - actor.state.job_region == 'low'
+  - world.relief_jobs >= 1
+  - world.relief_crew_food >= 2
+  - world.relief_path == 0
+  - world.relief_path_shifts == 0
+  - world.relief_worksite >= 1
+  nodes:
+  - {type: action, action_id: travel_to, parameters: {location_id: low_market}}
+  - {type: action, action_id: relief_path_first, parameters: {}}
+  cooldown_minutes: 0
+  goal_tags: []
+
+- id: relief_path_finish
+  version: 1
+  agent_label: 铺农圃近路
+  summary: 领两份饭，和班组铺出农圃小路。
+  description: 领两份饭，和班组铺出农圃小路。
+  entry_conditions:
+  - actor.alive
+  - actor.state.job_region == 'low'
+  - world.relief_jobs >= 1
+  - world.relief_crew_food >= 2
+  - world.relief_path == 0
+  - world.relief_path_shifts == 1
+  - world.relief_worksite >= 1
+  nodes:
+  - {type: action, action_id: travel_to, parameters: {location_id: low_market}}
+  - {type: action, action_id: relief_path_finish, parameters: {}}
+  cooldown_minutes: 0
+  goal_tags: []
+
+- id: relief_ratify_trade
+  version: 1
+  agent_label: 订两城互济契约
+  summary: 低城再付 2 枚先换 3 份饭。以后低城缺饭、两地有余资时按同价续换。
+  description: 低城再付 2 枚先换 3 份饭。以后低城缺饭、两地有余资时按同价续换。
+  entry_conditions:
+  - actor.alive
+  - world.relief_phase == 1
+  - world.relief_decisions > 0
+  - world.relief_desk >= 1
+  - world.low_wages >= 2
+  - world.yard_wages <= 168
+  - world.yard_food >= 13
+  - world.low_food <= 45
+  nodes:
+  - {type: action, action_id: travel_to, parameters: {location_id: low_city}}
+  - {type: action, action_id: relief_ratify_trade, parameters: {}}
+  cooldown_minutes: 0
+  goal_tags: [decision]
+
+- id: relief_ratify_growers
+  version: 1
+  agent_label: 让农圃接管余水
+  summary: 先拨 3 份井水给农圃。以后缺饭时，农圃用有余的水和燃料补收。
+  description: 先拨 3 份井水给农圃。以后缺饭时，农圃用有余的水和燃料补收。
+  entry_conditions:
+  - actor.alive
+  - world.relief_phase == 1
+  - world.relief_decisions > 0
+  - world.relief_desk >= 1
+  - world.low_water >= 16
+  - world.farm_water <= 21
+  nodes:
+  - {type: action, action_id: travel_to, parameters: {location_id: low_city}}
+  - {type: action, action_id: relief_ratify_growers, parameters: {}}
+  cooldown_minutes: 0
+  goal_tags: [decision]
+
+- id: relief_keep_reserves
+  version: 1
+  agent_label: 先结案，下次再议
+  summary: 把没用完的饭逐份退回水庭公粮，沿用现行长期安排。
+  description: 把没用完的饭逐份退回水庭公粮，沿用现行长期安排。
+  entry_conditions:
+  - actor.alive
+  - world.relief_phase == 1
+  - world.relief_decisions > 0
+  - world.relief_desk >= 1
+  nodes:
+  - {type: action, action_id: travel_to, parameters: {location_id: low_city}}
+  - {type: action, action_id: relief_keep_reserves, parameters: {}}
+  cooldown_minutes: 0
+  goal_tags: [decision]
+
+- id: relief_path_market
+  version: 1
+  agent_label: 给农圃留出早摊
+  summary: 出两枚钱设摊。公粮偏低时，用一份水庭余水补三份饭。
+  description: 出两枚钱设摊。公粮偏低时，用一份水庭余水补三份饭。
+  entry_conditions:
+  - actor.alive
+  - world.relief_phase == 0
+  - world.relief_path == 1
+  - world.relief_path_use == 0
+  - world.relief_desk >= 1
+  - world.low_wages <= 168
+  nodes:
+  - {type: action, action_id: travel_to, parameters: {location_id: low_market}}
+  - {type: action, action_id: relief_path_market, parameters: {}}
+  cooldown_minutes: 0
+  goal_tags: [decision]
+
+- id: relief_path_freight
+  version: 1
+  agent_label: 给工坊开备料点
+  summary: 从工坊付一枚钱。坊市缺矿时，旧站有余料便补两份。
+  description: 从工坊付一枚钱。坊市缺矿时，旧站有余料便补两份。
+  entry_conditions:
+  - actor.alive
+  - world.relief_phase == 0
+  - world.relief_path == 1
+  - world.relief_path_use == 0
+  - world.relief_desk >= 1
+  - world.shop_open == 1
+  - world.shop_cash >= 1
+  - world.low_wages <= 169
+  nodes:
+  - {type: action, action_id: travel_to, parameters: {location_id: low_market}}
+  - {type: action, action_id: relief_path_freight, parameters: {}}
+  cooldown_minutes: 0
+  goal_tags: [decision]

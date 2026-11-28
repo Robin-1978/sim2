@@ -332,3 +332,59 @@ def test_game_navigation_keeps_the_player_and_current_choice(tmp_path, browser, 
             pw.expect(bag).to_have_text(updated_bag)
         finally:
             page.close()
+
+
+def test_saved_player_renews_before_protected_reads_after_server_restart(tmp_path, browser):
+    database = create_instance(WORLDS / "tidebound_commons", "web-restart", tmp_path)
+    page = browser.new_page()
+    protected = []
+
+    @contextmanager
+    def running(port=0):
+        with ControlHTTPServer(("127.0.0.1", port), database, runtime_root=tmp_path) as server:
+            thread = Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                yield server
+            finally:
+                page.goto("about:blank")
+                server.shutdown()
+                thread.join()
+
+    def on_response(response):
+        path = urlsplit(response.url).path
+        if path.endswith("/view") or path == "/api/v1/observer/timeline":
+            protected.append(response.status)
+
+    try:
+        page.on("response", on_response)
+        with running() as server:
+            port = server.server_port
+            url = f"http://127.0.0.1:{port}"
+            page.goto(url)
+            page.locator("#entry-name").fill("林晚")
+            page.locator("#entry-submit").click()
+            pw.expect(page.locator("#summary-name")).to_have_text("林晚", timeout=20000)
+            saved = page.evaluate("JSON.parse(localStorage.getItem('sim2.game.player'))")
+            assert saved["sessionGeneration"] == server.session_generation
+            page.evaluate("sessionStorage.setItem('sim2.game.operator', 'old-operator-session')")
+
+        protected.clear()
+        with running(port) as server:
+            assert server.session_generation != saved["sessionGeneration"]
+            assert not server.authorize_session(saved["token"], "player", player_id=saved["id"])[0]
+            with page.expect_response(lambda response: urlsplit(response.url).path == "/api/v1/observer/timeline") as chronicle:
+                page.goto(url)
+                pw.expect(page.locator("#summary-name")).to_have_text("林晚", timeout=20000)
+            assert chronicle.value.status == 200
+            page.wait_for_function("""async () => {
+                const {state} = await import('/js/core.js');
+                return state.view?.player?.id && !document.querySelector('#game').classList.contains('hidden');
+            }""")
+            refreshed = page.evaluate("JSON.parse(localStorage.getItem('sim2.game.player'))")
+            assert refreshed["id"] == saved["id"] and refreshed["instanceId"] == saved["instanceId"]
+            assert refreshed["sessionGeneration"] == server.session_generation
+            assert refreshed["token"] != saved["token"]
+            assert protected and set(protected) == {200}
+    finally:
+        page.close()

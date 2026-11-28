@@ -12,6 +12,7 @@ from sim2.api.player_requirements import explain_requirement
 from sim2.api.runtime_supervisor import RuntimeSupervisor
 from sim2.api.service import ControlService
 from sim2.bootstrap.service import create_instance
+from sim2.intents.models import BehaviorIntent
 from worlds import world_path
 
 
@@ -284,3 +285,328 @@ def test_resident_model_budget_is_shared_by_decisions_and_reflections(tmp_path: 
             store.repositories.metadata.set("world_minute", 1440)
         assert platform.claim_evolution_task("agent_reflection")
         platform.complete_evolution_task("agent_reflection")
+
+
+def test_street_life_shows_resident_work_and_a_persistent_local_conversation(tmp_path: Path) -> None:
+    db = create_instance(WORLD, "street-life", tmp_path)
+    with closing(ControlService(db)) as service:
+        assert service.enter_player("hero", "builder", "林晚")["status"] == "accepted"
+        store = service.platform.store
+        entities = store.repositories.entities
+        with store.transaction():
+            player = entities.get_agent("hero")
+            player["initial_state"]["location_id"] = "low_market"
+            entities.update_agent("hero", player)
+            mason = entities.get_agent("low_resident_03")
+            mason["initial_state"].update(
+                location_id="low_market", status="executing", active_action="shop_fabricate_paving",
+                remaining_minutes=7, action_progress=0.5,
+            )
+            entities.update_agent(mason["id"], mason)
+            tick = service.platform._services["tick"]
+            tick.set_world_property("shop_open", 1)
+            tick.set_world_property("market_ore", 0)
+        view = service.player_view("hero")
+        resident = next(person for person in view["nearby_participants"] if person["id"] == mason["id"])
+        assert resident["active_behavior_label"] == "在工坊打制路石"
+        assert resident["initial_state"]["action_progress"] == 0.5
+        assert resident["can_talk"]
+        with store.transaction():
+            mason["initial_state"].update(active_action="wait", remaining_minutes=4)
+            entities.update_agent(mason["id"], mason)
+        view = service.player_view("hero")
+        resident = next(person for person in view["nearby_participants"] if person["id"] == mason["id"])
+        assert resident["can_talk"] and resident["active_behavior_label"] == "在这儿歇脚"
+        assert any(topic["id"] == "home" for topic in resident["topics"])
+        assert any("缺矿料" in signal["text"] for signal in view["city_watch"]["signals"])
+        assert service.dialogue("hero", "yard_resident_02", "work", "忙吗？")["failed_check"] == "location"
+        result = service.dialogue("hero", mason["id"], "work", "工坊现在怎么样？")
+        assert result["reply"]["status"] == "completed"
+        assert entities.get_agent(mason["id"])["initial_state"]["active_action"] == "wait"
+        assert service.dialogue("hero", mason["id"], "home", "收工以后想做什么？")["reply"]["status"] == "completed"
+        assert "支张桌" in service.player_dialogue_history("hero", mason["id"])["exchanges"][-1]["message"]
+        view = play(service, "set_up_crew_table")
+        assert view["world_properties"]["crew_table"] == 1
+        assert view["inventory"]["coin"] == 4
+        assert view["world_properties"]["low_wages"] == 62
+        assert any(entry["person"] == mason["id"] and entry["relation"] == "trust" for entry in view["relationships"])
+        assert view["city_watch"]["milestones"][0]["title"] == "工人在坊市支起长桌"
+        assert service.player_act({"player_id": "hero", "behavior_ref": "behavior:set_up_crew_table"})["status"] == "rejected"
+        with store.transaction():
+            mason = entities.get_agent(mason["id"])
+            mason["initial_state"].update(status="idle", active_action=None, remaining_minutes=0)
+            mason["needs"].update(satiety=60, belonging=45, hydration=90)
+            entities.update_agent(mason["id"], mason)
+            tick.set_world_property("low_food", 8)
+        intent = BehaviorIntent.from_json({"behavior_ref": "routine_shop_mason"}, actor_id=mason["id"])
+        assert service.platform.submit_behavior(intent, configured_routine=True)["status"] == "accepted"
+        for _ in range(6):
+            service.platform.step()
+        fed = entities.get_agent(mason["id"])
+        assert fed["needs"]["satiety"] > 90 and fed["needs"]["belonging"] > 45
+        assert store.repositories.metadata.get("world_properties")["low_food"] == 7
+    with closing(ControlService(db)) as service:
+        assert service.player_dialogue_history("hero", "yard_resident_02")["exchanges"] == []
+        transcript = service.player_dialogue_history("hero", "low_resident_03")["exchanges"]
+        assert len(transcript) == 4
+        assert "没料" in transcript[1]["message"] or "矿料不够" in transcript[1]["message"]
+        assert transcript[1]["in_reply_to"] == transcript[0]["dialogue_id"]
+        assert service.player_view("hero")["world_properties"]["crew_table"] == 1
+
+
+@pytest.mark.parametrize(("buyer", "advance", "source", "stock"), [
+    ("court", 3, "low_wages", "court_tender_stones"),
+    ("yard", 4, "yard_wages", "yard_tender_stones"),
+])
+def test_municipal_tenders_use_real_funds_and_pay_only_for_deliveries(
+    tmp_path: Path, buyer: str, advance: int, source: str, stock: str,
+) -> None:
+    with closing(ControlService(create_instance(WORLD, "tender", tmp_path))) as service:
+        assert service.enter_player("hero", "builder", "林晚")["status"] == "accepted"
+        store = service.platform.store
+        entities = store.repositories.entities
+        tick = service.platform._services["tick"]
+        with store.transaction():
+            player = entities.get_agent("hero")
+            player["initial_state"]["location_id"] = "low_market"
+            entities.update_agent("hero", player)
+            for key, value in {"shop_road": 1, "shop_open": 1, "shop_cash": 2, "market_ore": 6, "shop_batches": 1}.items():
+                tick.set_world_property(key, value)
+        view = service.player_view("hero")
+        assert [row["id"] for row in view["goals"]][0] == "tender_offer"
+
+        with store.transaction():
+            tick.set_world_property(source, 0)
+        assert service.player_act({"player_id": "hero", "behavior_ref": f"behavior:sign_{buyer}_tender"})["status"] == "rejected"
+        with store.transaction():
+            tick.set_world_property(source, 60)
+
+        view = play(service, f"sign_{buyer}_tender")
+        props = view["world_properties"]
+        assert props["shop_cash"] == 2 + advance and props["shop_sales"] == 0
+        assert props[source] == 60 - (10 if buyer == "court" else 2)
+        assert props["tender_escrow"] == 6 and props["tender_bonus"] == 1
+        assert props["tender_delivered"] == 0 and props[stock] == 0
+        other = "yard" if buyer == "court" else "court"
+        assert service.player_act({"player_id": "hero", "behavior_ref": f"behavior:sign_{other}_tender"})["status"] == "rejected"
+        for batch in range(1, 4):
+            if buyer == "yard":
+                view = play(service, "tender_mason_yard")
+                assert view["world_properties"]["tender_delivered"] == batch - 1
+                assert view["world_properties"]["tender_yard_ready"] == 1
+                result = service.player_act({"player_id": "hero", "behavior_ref": "behavior:tender_haul"})
+                assert result["status"] == "accepted", result
+                service.player_wait("hero", minutes=240)
+                view = service.player_view("hero")
+            else:
+                view = play(service, "tender_mason_court")
+            props = view["world_properties"]
+            assert props["tender_delivered"] == batch, props
+            assert props["tender_escrow"] == 6 - (batch - 1) * 3
+            assert props["shop_sales"] == advance + (batch - 1) * 3
+            assert props[stock] == batch * 2
+        assert props["tender_batches_due"] == 0 and props["tender_receipt_slot"] == 1
+        with store.transaction():
+            tick.set_world_property("tender_minutes", 0)
+            player = entities.get_agent("hero")
+            player["initial_state"]["location_id"] = "low_market"
+            entities.update_agent("hero", player)
+        view = play(service, "tender_close")
+        assert view["world_properties"]["tender_bonus"] == 0
+        assert view["world_properties"]["tender_mode"] == 0
+        assert view["world_properties"]["shop_sales"] == advance + 6
+
+
+@pytest.mark.parametrize(("source", "charter", "policy"), [
+    ("relief_buy_yard", "relief_ratify_trade", 1),
+    ("relief_early_harvest", "relief_ratify_growers", 2),
+])
+def test_food_council_changes_the_same_towns_in_different_ways(tmp_path: Path, source: str, charter: str, policy: int) -> None:
+    db = create_instance(WORLD, f"council-{policy}", tmp_path)
+    with closing(ControlService(db)) as service:
+        assert service.enter_player("hero", "builder", "林晚")["status"] == "accepted"
+        platform = service.platform
+        repo = platform.store.repositories
+        tick = platform._services["tick"]
+        with platform.store.transaction():
+            player = repo.entities.get_agent("hero")
+            player["initial_state"]["location_id"] = "low_city"
+            repo.entities.update_agent("hero", player)
+            for key, value in {"shop_road": 1, "shop_open": 1, "low_food": 2, "yard_food": 26}.items():
+                tick.set_world_property(key, value)
+        initial = service.player_view("hero")["world_properties"]
+        assert service.player_view("hero")["goals"][0]["id"] == "relief_source"
+        view = play(service, source)
+        props = view["world_properties"]
+        assert props["relief_food"] == (10 if policy == 1 else 6)
+        assert props["relief_desk"] == 1 and props["relief_cases"] == 1
+        if policy == 1:
+            assert props["yard_food"] == initial["yard_food"] - 10
+            assert props["yard_wages"] == initial["yard_wages"] + 6
+            assert props["low_wages"] == initial["low_wages"] - 6
+        else:
+            assert props["yard_wages"] == initial["yard_wages"] and props["low_wages"] == initial["low_wages"]
+            assert props["field_fuel"] == initial["field_fuel"] - 2
+            assert props["low_water"] == initial["low_water"] - 4
+            assert props["farm_water"] == initial["farm_water"] + 2
+        assert service.player_act({"player_id": "hero", "behavior_ref": "behavior:relief_buy_yard"})["status"] == "rejected"
+        view = play(service, "relief_feed_neighborhood")
+        props = view["world_properties"]
+        assert props["low_food"] == initial["low_food"] + 6
+        if policy == 1:
+            assert "behavior:relief_commission_path" in view["goals"][0]["ready_behavior_refs"]
+            view = play(service, "relief_commission_path")
+            assert view["world_properties"]["relief_jobs"] == 2
+        else:
+            assert "behavior:relief_commission_path" not in view["goals"][0]["ready_behavior_refs"]
+
+        view = play(service, charter)
+        props = view["world_properties"]
+        assert props["relief_policy"] == policy and props["relief_phase"] == 0
+        assert props["relief_reopen"] > 0
+        assert service.player_act({"player_id": "hero", "behavior_ref": f"behavior:{source}"})["status"] == "rejected"
+        if policy == 1:
+            for actor_id in ("low_resident_06", "low_resident_07"):
+                with platform.store.transaction():
+                    resident = repo.entities.get_agent(actor_id)
+                    resident["initial_state"].update(location_id="low_market", status="idle")
+                    resident["needs"].update(hydration=95, satiety=80)
+                    repo.entities.update_agent(actor_id, resident)
+                intent = BehaviorIntent.from_json({"behavior_ref": "routine_resident"}, actor_id=actor_id)
+                assert platform.submit_behavior(intent, configured_routine=True)["status"] == "accepted"
+                for _ in range(5):
+                    platform.step()
+            view = service.player_view("hero")
+            assert view["world_properties"]["relief_path_shifts"] == 2
+            assert view["world_properties"]["relief_crew_food"] == 0
+            assert view["goals"][0]["id"] == "relief_followup"
+            view = play(service, "relief_path_market")
+            assert view["inventory"]["coin"] == 4
+            assert view["world_properties"]["relief_path_use"] == 1
+        else:
+            assert view["world_properties"]["relief_path"] == 0
+
+    with closing(ControlService(db)) as service:
+        view = service.player_view("hero")
+        edges = [edge for edge in view["map"]["edges"] if {edge["from"], edge["to"]} == {"low_market", "low_fields"}]
+        assert [edge["minutes"] for edge in edges] == ([2] if policy == 1 else [])
+        tick = service.platform._services["tick"]
+        store = service.platform.store
+        with store.transaction():
+            tick.set_world_property("low_food", 2)
+            store.repositories.metadata.set("world_minute", 89)
+        service.platform.step()
+        props = service.player_view("hero")["world_properties"]
+        assert props["relief_followups"] == 1
+        assert props["relief_path_trades"] == (1 if policy == 1 else 0)
+        receipt = store.repositories.events.recent_events_by_types(["gatebuild.relief_supply"], limit=1)[0]
+        meal_change = next(entry for entry in receipt["effects"] if entry.get("resource_id") == "low_food")
+        assert meal_change["after"] - meal_change["before"] == (3 if policy == 1 else 4)
+        assert service.player_view("hero")["city_watch"]["report"]["summary"] == receipt["summary"]
+        if policy == 1:
+            assert props["low_food"] == 8 and props["yard_food"] == 10
+        else:
+            assert props["low_food"] == 6 and props["field_fuel"] == 9
+        with store.transaction():
+            tick.set_world_property("low_food", 2)
+            tick.set_world_property("yard_food" if policy == 1 else "field_fuel", 10 if policy == 1 else 0)
+            tick.set_world_property("relief_reopen", 1)
+            if policy == 1:
+                tick.set_world_property("low_water", 13)
+            store.repositories.metadata.set("world_minute", 179)
+        service.platform.step()
+        view = service.player_view("hero")
+        assert view["world_properties"]["relief_followups"] == 1
+        assert view["world_properties"]["relief_reopen"] == 0
+        assert view["goals"][0]["id"] == "relief_source"
+
+
+def test_food_council_rechecks_destination_capacity_at_settlement(tmp_path: Path) -> None:
+    with closing(ControlService(create_instance(WORLD, "council-capacity", tmp_path))) as service:
+        assert service.enter_player("hero", "builder", "林晚")["status"] == "accepted"
+        platform = service.platform
+        store = platform.store
+        tick = platform._services["tick"]
+        with store.transaction():
+            player = store.repositories.entities.get_agent("hero")
+            player["initial_state"]["location_id"] = "low_city"
+            store.repositories.entities.update_agent("hero", player)
+            for key, value in {"shop_road": 1, "low_food": 2, "yard_food": 26, "yard_wages": 164}.items():
+                tick.set_world_property(key, value)
+        assert service.player_act({"player_id": "hero", "behavior_ref": "behavior:relief_buy_yard"})["status"] == "accepted"
+        platform.step()
+        reserved = store.repositories.metadata.get("world_properties")
+        assert reserved["relief_desk"] == 0 and reserved["yard_food"] == 16
+        with store.transaction():
+            tick.set_world_property("yard_wages", 167)
+        service.player_wait("hero", minutes=5)
+        view = service.player_view("hero")
+        assert view["last_action_outcome"]["status"] == "failed"
+        props = view["world_properties"]
+        assert props["yard_wages"] == 167 and props["low_wages"] == 60
+        assert props["yard_food"] == 26 and props["relief_desk"] == 1
+        assert props["relief_food"] == 0 and props["relief_cases"] == 0
+
+
+def test_new_path_can_supply_the_workshop_instead_of_the_market(tmp_path: Path) -> None:
+    with closing(ControlService(create_instance(WORLD, "council-freight", tmp_path))) as service:
+        assert service.enter_player("hero", "builder", "林晚")["status"] == "accepted"
+        platform = service.platform
+        store = platform.store
+        tick = platform._services["tick"]
+        with store.transaction():
+            player = store.repositories.entities.get_agent("hero")
+            player["initial_state"]["location_id"] = "low_market"
+            store.repositories.entities.update_agent("hero", player)
+            for key, value in {"relief_path": 1, "shop_open": 1, "shop_cash": 5, "yard_ore": 8, "market_ore": 1}.items():
+                tick.set_world_property(key, value)
+        view = play(service, "relief_path_freight")
+        assert view["world_properties"]["shop_cash"] == 4 and view["world_properties"]["low_wages"] == 61
+        assert view["world_properties"]["relief_path_use"] == 2
+        assert service.player_act({"player_id": "hero", "behavior_ref": "behavior:relief_path_market"})["status"] == "rejected"
+        with store.transaction():
+            store.repositories.metadata.set("world_minute", 89)
+        platform.step()
+        view = service.player_view("hero")
+        props = view["world_properties"]
+        assert (props["yard_ore"], props["market_ore"], props["relief_path_trades"]) == (6, 3, 1)
+        receipt = store.repositories.events.recent_events_by_types(["gatebuild.relief_path_supply"], limit=1)[0]
+        assert receipt["rule_id"] == "relief_path_supply_workshop"
+        with store.transaction():
+            store.repositories.metadata.set("world_minute", 179)
+        platform.step()
+        assert service.player_view("hero")["world_properties"]["relief_path_trades"] == 1
+
+
+def test_play_updates_a_known_bundled_save_and_keeps_player_and_resident_progress(tmp_path: Path) -> None:
+    from sim2.api.instances import InstanceRegistry
+
+    db = create_instance(WORLD, "old-bundled-save", tmp_path)
+    with closing(ControlService(db)) as service:
+        assert service.enter_player("hero", "builder", "旅人")["status"] == "accepted"
+        store = service.platform.store
+        with store.transaction():
+            store.repositories.metadata.set("config_version", "gate-cities-build-0.4")
+            store.repositories.metadata.set("world_minute", 1063)
+            props = service.platform._services["tick"]
+            props.set_world_property("shop_road", 1)
+            props.set_world_property("low_food", 6)
+            player = store.repositories.entities.get_agent("hero")
+            player["inventory"]["coin"] = 7
+            store.repositories.entities.update_agent("hero", player)
+            resident = store.repositories.entities.get_agent("porter_bai")
+            resident.update(controller="llm", controller_fallback="bt")
+            store.repositories.entities.update_agent("porter_bai", resident)
+    registry = InstanceRegistry(tmp_path)
+    result = registry.upgrade_bundled_for_play(db)
+    assert result["from"] == "gate-cities-build-0.4" and result["to"] == "gate-cities-build-0.6"
+    backup = Path(result["snapshot"])
+    assert registry.describe(backup)["world_minute"] == 1063
+    assert registry.describe(backup)["config_version"] == "gate-cities-build-0.4"
+    assert registry.upgrade_bundled_for_play(db) is None
+    with closing(ControlService(db)) as service:
+        view = service.player_view("hero")
+        assert view["inventory"]["coin"] == 7 and view["server_minute"] == 1063
+        assert view["goals"][0]["id"] == "relief_source"
+        resident = service.platform.store.repositories.entities.get_agent("porter_bai")
+        assert resident["controller"] == "llm" and resident["controller_fallback"] == "bt"

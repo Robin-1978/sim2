@@ -12,6 +12,21 @@ travel:
 resource_entity_types:
 - resource
 resource_caps:
+  relief_desk: {min: 0, max: 1}
+  relief_food: {min: 0, max: 10}
+  relief_crew_food: {min: 0, max: 4}
+  relief_jobs: {min: 0, max: 2}
+  relief_worksite: {min: 0, max: 1}
+  crew_table_slot: {min: 0, max: 1}
+  tender_receipt_slot: {min: 0, max: 1}
+  tender_sign_slot: {min: 0, max: 1}
+  tender_escrow: {min: 0, max: 6}
+  tender_bonus: {min: 0, max: 1}
+  tender_hiring_fund: {min: 0, max: 1}
+  tender_batches_due: {min: 0, max: 3}
+  tender_yard_ready: {min: 0, max: 3}
+  court_tender_stones: {min: 0, max: 18}
+  yard_tender_stones: {min: 0, max: 18}
   high_water: {min: 0, max: 70}
   high_food: {min: 0, max: 48}
   high_wages: {min: 0, max: 170}
@@ -64,7 +79,7 @@ resource_caps:
   shop_lease: {min: 0, max: 1}
   shop_cash: {min: 0, max: 40}
   shop_dispatch: {min: 0, max: 1}
-  shop_bench: {min: 0, max: 1}
+  shop_bench: {min: 0, max: 2}
   paving_stock: {min: 0, max: 6}
   shop_road_slot: {min: 0, max: 1}
 resource_property_projections:
@@ -205,6 +220,8 @@ world_property_labels:
   yard_freight: 铁轨货场本班货位
   yard_maintenance: 铁轨货场门况
 item_labels:
+  tender_ore: 合同矿料
+  tender_yard_crate: 旧站路石货箱
   gate_core: 门芯
   paving_ore: 工坊已买矿料
   frame: 框架件
@@ -295,6 +312,92 @@ need_gates:
 - {to: ambition, threshold: 0.77, multiplier: 0.25, from: hydration}
 - {to: ambition, threshold: 0.77, multiplier: 0.25, from: satiety}
 minute_effects:
+- id: relief_path_sell_farm
+  scope: world
+  every_minutes: 90
+  effects:
+  - {type: world_resource_delta, resource_id: low_water, delta: -1}
+  - {type: world_resource_delta, resource_id: low_food, delta: 3}
+  - {type: world_property_delta, property: relief_path_trades, delta: 1}
+  condition: world.relief_path_use == 1 and world.low_water >= 17 and world.low_food <= 12
+  event_type: gatebuild.relief_path_supply
+  event_summary: 近路边的早摊用一份余水，向水庭补了三份饭。
+- id: relief_path_supply_workshop
+  scope: world
+  every_minutes: 90
+  effects:
+  - {type: world_resource_delta, resource_id: yard_ore, delta: -2}
+  - {type: world_resource_delta, resource_id: market_ore, delta: 2}
+  - {type: world_property_delta, property: relief_path_trades, delta: 1}
+  condition: world.relief_path_use == 2 and world.yard_ore >= 8 and world.market_ore < 2
+  event_type: gatebuild.relief_path_supply
+  event_summary: 新路备料点把旧站的两份余矿送到了坊市仓。
+- id: relief_reopen
+  scope: world
+  every_minutes: 1
+  effects:
+  - {type: world_property_delta, property: relief_reopen, delta: -1}
+  condition: world.relief_reopen > 0
+- id: relief_return_reserves
+  scope: world
+  every_minutes: 1
+  effects:
+  - {type: world_resource_delta, resource_id: relief_food, delta: -1}
+  - {type: world_resource_delta, resource_id: low_food, delta: 1}
+  condition: world.relief_phase == 0 and world.relief_food >= 1 and world.low_food < 48
+- id: relief_exchange_delivery
+  scope: world
+  every_minutes: 90
+  effects:
+  - {type: world_resource_delta, resource_id: low_wages, delta: -2}
+  - {type: world_resource_delta, resource_id: yard_wages, delta: 2}
+  - {type: world_resource_delta, resource_id: yard_food, delta: -3}
+  - {type: world_resource_delta, resource_id: low_food, delta: 3}
+  - {type: world_property_delta, property: relief_followups, delta: 1}
+  condition: world.relief_policy == 1 and world.relief_phase == 0 and world.low_food <= 8 and world.yard_food >= 13 and world.low_wages >= 2 and world.yard_wages <= 168
+  event_type: gatebuild.relief_supply
+  event_summary: 低城再次按互济契约向旧站付两枚钱，换到三份饭。
+- id: relief_growers_delivery
+  scope: world
+  every_minutes: 90
+  effects:
+  - {type: world_resource_delta, resource_id: low_water, delta: -2}
+  - {type: world_resource_delta, resource_id: field_fuel, delta: -1}
+  - {type: world_resource_delta, resource_id: low_food, delta: 4}
+  - {type: world_property_delta, property: relief_followups, delta: 1}
+  condition: world.relief_policy == 2 and world.relief_phase == 0 and world.low_food <= 8 and world.low_water >= 18 and world.field_fuel >= 1
+  event_type: gatebuild.relief_supply
+  event_summary: 农圃用了余水和燃料，按新约补给水庭四份饭。
+- id: tender_clock
+  scope: world
+  every_minutes: 1
+  effects:
+  - type: world_property_delta
+    property: tender_minutes
+    delta: -1
+  condition: world.tender_mode > 0 and world.tender_delivered < 3 and world.tender_minutes > 0
+- id: tender_unused_hiring
+  scope: world
+  every_minutes: 1
+  effects:
+  - type: world_resource_delta
+    resource_id: tender_hiring_fund
+    delta: -1
+  - type: world_resource_delta
+    resource_id: settlement_fund
+    delta: 1
+  condition: world.tender_mode == 0 and world.tender_hiring_fund == 1 and world.settlement_fund < 40
+- id: tender_farm_canal
+  scope: world
+  every_minutes: 60
+  effects:
+  - type: world_resource_delta
+    resource_id: low_water
+    delta: -2
+  - type: world_resource_delta
+    resource_id: farm_water
+    delta: 2
+  condition: world.tender_irrigate == 1 and world.low_water >= 18 and world.farm_water <= 22
 - id: high_spring
   scope: world
   every_minutes: 60
@@ -373,7 +476,7 @@ minute_effects:
   effects:
   - {type: world_resource_delta, resource_id: low_food, delta: -2}
   - {type: world_resource_delta, resource_id: high_food, delta: 2}
-  condition: world.low_food >= 5 and world.high_food <= 25
+  condition: world.low_food >= 5 and world.high_food <= 25 and (world.relief_cases == 0 or world.low_food >= 12)
 - id: cart_high_water_to_yard_water
   scope: world
   every_minutes: 90
@@ -394,14 +497,14 @@ minute_effects:
   effects:
   - {type: world_resource_delta, resource_id: low_food, delta: -2}
   - {type: world_resource_delta, resource_id: yard_food, delta: 2}
-  condition: world.low_food >= 5 and world.yard_food <= 25
+  condition: world.low_food >= 5 and world.yard_food <= 25 and (world.relief_cases == 0 or world.low_food >= 12)
 - id: cart_low_food_to_mine_food
   scope: world
   every_minutes: 120
   effects:
   - {type: world_resource_delta, resource_id: low_food, delta: -2}
   - {type: world_resource_delta, resource_id: mine_food, delta: 2}
-  condition: world.low_food >= 5 and world.mine_food <= 25
+  condition: world.low_food >= 5 and world.mine_food <= 25 and (world.relief_cases == 0 or world.low_food >= 12)
 - id: thirst
   scope: agent
   every_minutes: 1
@@ -573,7 +676,7 @@ progression:
   priority: 1.0
   label: 交付工坊的第一批路石
   summary: 你可以亲自做第一批，也可以委托居民。有人在处理时，等一班或继续建门都能推进订单。
-  visible_when: world.shop_open == 1 and world.shop_batches == 0
+  visible_when: world.shop_open == 1 and world.shop_batches == 0 and world.shop_road == 0
   target_behaviors:
   - shop_receive
   - shop_process
@@ -585,7 +688,7 @@ progression:
   priority: 0.97
   label: 工坊开始赚钱了
   summary: 取走一枚已结算的利润，或者让两批路石变成一条真正缩短的公共道路。
-  visible_when: world.shop_open == 1 and world.shop_batches >= 1 and world.shop_dividends == 0
+  visible_when: world.shop_road == 0 and world.shop_open == 1 and world.shop_batches >= 1 and world.shop_dividends == 0
   target_behaviors:
   - shop_pay_dividend
   - shop_pave_market_road
@@ -601,6 +704,71 @@ progression:
   visible_when: world.shop_dividends >= 1 and world.shop_road == 0
   target_behaviors: [shop_pave_market_road, shop_process, shop_supply, appoint_shop_crew]
   support_behaviors: [wait_for_shop]
+- id: relief_source
+  priority: 1.1
+  label: 低城的锅快空了
+  summary: 旧站愿意卖饭，但要拿真工钱。也可以保住工钱，用井水和燃料抢收。先决定用哪笔资源换今晚的饭。
+  visible_when: world.shop_road == 1 and world.relief_phase == 0 and world.relief_reopen == 0 and world.low_food <= 6
+  target_behaviors: [relief_buy_yard, relief_early_harvest]
+  support_behaviors: []
+- id: relief_allocation
+  priority: 1.2
+  label: 这批饭先给谁？
+  summary: 先开公粮锅，还是把饭留给修近路的工班？有十份可以两件都做。资源不够时，做过一项就能议定以后的安排。
+  visible_when: world.relief_phase == 1 and world.relief_decisions == 0
+  target_behaviors: [relief_feed_neighborhood, relief_commission_path]
+  support_behaviors: []
+- id: relief_charter
+  priority: 1.2
+  label: 今晚已有安排，下次怎么办？
+  summary: 剩饭够用时可完成另一项安排。然后决定未来靠两城互济、农圃补收，还是保留现有办法。
+  visible_when: world.relief_phase == 1 and world.relief_decisions > 0
+  target_behaviors: [relief_feed_neighborhood, relief_commission_path, relief_ratify_trade, relief_ratify_growers, relief_keep_reserves]
+- id: relief_followup
+  priority: 1.05
+  label: 新路通了，路边留给谁？
+  summary: 坊市到农圃只要两分钟。沿路有一块空地，可用来补低城的饭，或补工坊库存。两边都想用。
+  visible_when: world.relief_phase == 0 and world.relief_path == 1 and world.relief_path_use == 0
+  target_behaviors: [relief_path_market, relief_path_freight]
+- id: tender_offer
+  priority: 0.96
+  label: 两座城都想买你的路石
+  summary: 水庭就地验收。旧站工资和预付更多，货却必须送到货场。合同会锁住出资，只能同时接一份。
+  visible_when: world.shop_road == 1 and world.tender_mode == 0
+  target_behaviors:
+  - sign_court_tender
+  - sign_yard_tender
+- id: tender_active
+  priority: 0.99
+  label: 正在履行三批路石的合同
+  summary: 班组会自行买料、做货和配送。你可亲自补上任一环，也能在等待时去做别的事。
+  visible_when: world.tender_mode > 0 and world.tender_delivered < 3
+  target_behaviors:
+  - tender_wait
+  - tender_supply
+  - tender_unload
+  - tender_mason_court
+  - tender_mason_yard
+  - tender_receive_yard
+  - tender_haul
+- id: tender_final
+  priority: 1.0
+  label: 三批路石全数验收
+  summary: 回坊市结清合同。交付的路石可以盖成一项有长期作用的公共工程。
+  visible_when: world.tender_mode > 0 and world.tender_delivered == 3
+  target_behaviors:
+  - tender_close
+- id: tender_works
+  priority: 0.98
+  label: 为城市留下有用的工程
+  summary: 决定交付的路石要做什么。引水渠会补给农圃，装货道会缩短旧站步程。
+  visible_when: world.tender_mode == 0 and ((world.court_tender_stones >= 6 and world.tender_irrigate == 0) or
+    (world.yard_tender_stones >= 6 and world.tender_resurface == 0))
+  target_behaviors:
+  - tender_irrigate
+  - tender_resurface
+  - sign_court_tender
+  - sign_yard_tender
 - id: shop_followup
   priority: 0.67
   label: 下一班生产与城市维护
@@ -729,3 +897,88 @@ player_requirement_hints:
   world.yard_city == 1: 先安装铁轨货场门端
   world.yard_mine == 1: 先安装灰脊集口门端
   world.yard_link == 1: 先启用通往铁轨货场的门线
+
+resident_conversations:
+  default:
+    topics:
+      greet:
+        question: 打个招呼
+        lines:
+        - when: actor.need.satiety < 45
+          text: 你也刚下工？我先找口吃的，空着肚子做不了多少事。
+        - when: actor.need.hydration < 45
+          text: 我得找些水。等喝过水，我再回去接着干。
+        - text: 早。工地开得早，等这一趟忙完了，还能说两句。
+      work:
+        question: 今天在哪儿上工？
+        lines:
+        - when: actor.state.job_region == 'mine'
+          text: 我多半在灰脊。矿口出多少，货架上才有多少，空车来了也只能等。
+        - when: actor.state.job_region == 'yard'
+          text: 工钱在货场按班结。有门可走时，搬完一趟常还有下一趟。
+        - when: actor.state.job_region == 'low'
+          text: 我在低城找活。早一点去农圃，能赶上头一班。
+        - text: 我去看今天哪里缺人手。有活就领一班工钱，没活就先回家。
+      home:
+        question: 一天忙完以后呢？
+        lines:
+        - when: actor.inventory.coin <= 1
+          text: 今天先把饭钱留好。能多攒一枚，就离下个月的床位钱近一点。
+        - when: actor.need.belonging < 45
+          text: 在这儿认得的人还不多。有空来坐一会儿，我想听听你从哪里来。
+        - text: 我会回住处坐一会儿。能跟今天一起干活的人吃口饭，就挺好。
+  residents:
+    low_resident_02:
+      intro: 阮生原先在农圃出工，后来替坊市跑矿料。他算得清每一趟路要走多久，也知道雨天哪一处路面最滑。
+      topics:
+        work:
+          question: 今天跑哪条路？
+          lines:
+          - when: actor.inventory.paving_ore >= 2
+            text: 货已经买下来了，得送回坊市。只要货没入仓，苗原就没料开工。
+          - when: world.tender_mode == 2
+            text: 旧站买的是送到货场的石料。进了坊市只是到了一半，过门、过桥都得算时间。
+          - when: world.tender_mode == 1
+            text: 水庭这单在坊市验收。送矿的人交回仓就行，石料留给低城用。
+          - when: world.shop_road == 1
+            text: 新铺的路现在两分钟就能走完。收工去水庭洗把脸，来回都赶得及。
+          - text: 先看有没有工钱买料。没矿可拉的时候，我也会回农圃找活。
+        home:
+          question: 你想留下来吗？
+          lines:
+          - text: 我姐在低城种菜。我走过的路多，可干活走再远，还是愿意赶回来同她吃饭。
+    low_resident_03:
+      intro: 苗原带着一只修了三次的錾子。她不喜欢欠薪，也舍不得扔掉用熟的工具。
+      help_behavior: set_up_crew_table
+      topics:
+        work:
+          question: 工坊现在怎么样？
+          lines:
+          - when: world.market_ore < 2 and world.shop_open == 1
+            text: 矿料不够开炉。阮生把货送回来，我才能做下一炉。
+          - when: world.tender_mode == 2
+            text: 旧站要把货运走。做完得装箱，我最担心的是路上耽搁。
+          - when: world.shop_open == 1
+            text: 料够就开工。每批两份矿料，还有一枚工钱，账都要记清。
+          - text: 我还在农圃领工钱。坊市那间空工坊若是能开起来，我想再摸摸錾子。
+        home:
+          question: 收工以后想做什么？
+          lines:
+          - when: world.crew_table == 1
+            text: 我们在长桌吃饭。阮生还想把工钱省下来，换一双能走雨路的靴子。
+          - when: world.shop_open == 1
+            text: 我想在工坊边支张桌。有些人赶回来时摊都收了，坐下来吃顿热饭比站着等活强。
+          - text: 去农圃看看。那儿每天都有人等着领活，我也常赶着天亮去。
+    yard_resident_02:
+      intro: 姚齐在货场记件领工钱。门线引来了货车，也让他担心干了一天仍分不到工钱。
+      topics:
+        work:
+          question: 铁轨货场的活多吗？
+          lines:
+          - when: world.tender_hired == 1
+            text: 我领了旧站的津贴，在坊市有工位了。先把手艺学好，我还想攒一点钱搬到近处。
+          - when: world.yard_wages < 8
+            text: 货在动，可领工钱的人越来越多。再没新活，我想去低城看看。
+          - when: world.yard_link == 1
+            text: 灰脊有货能直接过门。有货要卸的时候，能干到夜里。
+          - text: 门没开，货还在走北边的老路。赶路的人多，卸车的活反倒没那么多。

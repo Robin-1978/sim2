@@ -12,9 +12,7 @@ def _player(ctx: RequestContext) -> str:
 
 
 def player_entry(ctx: RequestContext) -> dict[str, Any]:
-    if not ctx.server.has_world:
-        return {"status": "no_world", "origins": [], "players": [], "can_create_player": False}
-    return ctx.server.service_call("player_entry")
+    return ctx.server.player_entry()
 
 
 def enter_player(ctx: RequestContext) -> dict[str, Any]:
@@ -65,6 +63,10 @@ def player_task_cancel(ctx: RequestContext) -> dict[str, Any]:
     if task is None:
         raise ApiError(404, "task_not_found", "manual task does not exist", failed_check="task_id")
     return {"status": "ok", "task": task}
+
+
+def dialogue_history(ctx: RequestContext) -> dict[str, Any]:
+    return ctx.server.service_call("player_dialogue_history", _player(ctx), ctx.query_value("with"))
 
 
 def player_dialogue(ctx: RequestContext) -> dict[str, Any]:

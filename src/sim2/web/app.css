@@ -2143,3 +2143,82 @@ body:has(.game-grid:not([data-screen="scene"])) .mobile-action-bar { display: no
   .opportunity-panel p { margin: 5px 0 8px; }
   .opportunity-choice { padding: 8px; }
 }
+
+.game-grid .street-life {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(245px, 1fr);
+  border-left: 3px solid #b88f59;
+}
+.street-local, .street-city { padding: 13px 16px; min-width: 0; }
+.street-city { border-left: 1px solid #b49e7738; }
+.street-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
+.street-heading h2 { margin: 0; color: var(--paper); font: 600 18px/1.3 var(--serif); }
+.street-heading > span { color: #d0bd98; font-size: 12px; }
+.street-people { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(132px, 100%), 1fr)); gap: 6px; }
+.street-person { border-radius: 3px; padding: 7px 8px; text-align: left; }
+.street-person .person-copy { min-width: 0; }
+.street-person .person-copy > span { color: #c3c4b7; white-space: normal; }
+.street-person small { color: #dfc491; font-size: 10px; }
+.city-signals, #city-milestone-list { list-style: none; margin: 0; padding: 0; }
+.city-signals li, #city-milestone-list li { margin-bottom: 5px; font-size: 12px; line-height: 1.45; color: #cbd2c5; }
+.city-signals strong, #city-milestone-list strong { margin-right: 7px; color: #ebcf9d; }
+#city-milestones summary { cursor: pointer; color: #d9c49f; font-size: 11px; }
+#city-milestone-list li { padding-top: 6px; border-top: 1px solid #b49e7738; }
+#city-milestone-list small { margin-right: 7px; color: #c5b794; }
+#city-milestone-list p { margin: 3px 0; }
+.resident-choices { display: flex; flex-wrap: wrap; gap: 6px; }
+.resident-choices .button { min-height: 38px; }
+.resident-interactions { padding: 8px 0; }
+@media (max-width: 680px) {
+  .game-grid .street-life { grid-template-columns: minmax(0, 1fr); }
+  .street-local, .street-city { padding: 9px 12px; }
+  .street-city { border-left: 0; border-top: 1px solid #b49e7738; }
+  .street-heading h2 { font-size: 16px; }
+}
+.street-extra summary {
+  padding-top: 7px; cursor: pointer; color: #d9c49f; font-size: 11px;
+}
+.street-extra .street-people { padding-top: 6px; }
+
+#center-stage:has(> .decision-desk:not(.hidden)) > .player-summary {
+  order: -5;
+}
+#center-stage > .decision-desk {
+  order: -4;
+}
+#center-stage > .decision-report {
+  order: -3;
+  border-left: 3px solid #b88f59;
+  padding: 10px 15px;
+}
+#center-stage:has(> .decision-desk:not(.hidden)) > .decision-report {
+  display: none;
+}
+.decision-report h2 { color: var(--paper); font: 600 16px/1.3 var(--serif); margin: 0 0 4px; }
+.decision-report p { color: #cbd2c5; font-size: 13px; margin: 0 0 6px; }
+.decision-desk .opportunity-panel {
+  margin: 0; border: 1px solid #b69e6f; border-top: 3px solid #ad773d;
+  background: #f0e2c2; color: #362b22; padding: 14px clamp(12px, 2vw, 24px);
+}
+.opportunity-stage {
+  color: #725531 !important; font-size: 12px; margin: 0 0 4px !important;
+}
+.decision-desk .opportunity-metrics {
+  padding: 7px 0; margin-bottom: 8px; border-block: 1px solid #ad9167;
+}
+.decision-desk .venture-metric dt { color: #594a34; }
+.decision-desk .venture-metric dd { color: #392819; }
+.decision-desk .opportunity-choices {
+  display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px;
+}
+.decision-desk .opportunity-choice {
+  background: #fffaf088; min-width: 0; padding: 8px 10px;
+}
+.decision-desk .opportunity-choice:hover, .decision-desk .opportunity-choice:focus-visible {
+  background: #fff8e7;
+}
+@media (max-width: 460px) {
+  .decision-desk .opportunity-choices { grid-template-columns: minmax(0, 1fr); gap: 5px; }
+  .decision-desk .opportunity-panel { padding: 10px 12px; }
+  .decision-desk .opportunity-panel p { font-size: 12px; }
+}

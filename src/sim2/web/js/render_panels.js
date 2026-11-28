@@ -1,4 +1,4 @@
-import { loadDialogue, loadTrades, travelToNode } from "./actions.js";
+import { beginAction, loadDialogue, loadTrades, sendDialogue, travelToNode } from "./actions.js";
 import { paintAvatar } from "./art.js";
 import { $, el, formatMinute, itemLabel, state, toast, translateNarrative, uiConfig } from "./core.js";
 
@@ -24,7 +24,7 @@ export function renderTalkTargets() {
       }
       select.disabled = false;
       for (const person of participants) {
-        select.append(new Option(`${person.name || person.id}${person.status === "executing" ? "（忙碌）" : ""}`, person.id));
+        select.append(new Option(`${person.name || person.id}${person.can_talk ? "" : "（忙碌）"}`, person.id));
       }
       if (previous && [...select.options].some((option) => option.value === previous)) select.value = previous;
     }
@@ -39,8 +39,7 @@ function latestActivityFor(personId) {
 
 
 function personActivityLine(person) {
-    if (person?.status !== "executing" && person?.status !== "paused") return "可以交谈";
-    return person?.active_behavior_label || "正在忙碌";
+    return person?.active_behavior_label || (person?.can_talk ? "可以交谈" : "暂时忙碌");
   }
 
 
@@ -68,7 +67,7 @@ export function renderPeopleActivity() {
         ? `${activity.status === "completed" ? "完成" : activity.status === "started" ? "开始" : "中断"} · ${activity.behavior || "行动"}`
         : (activity.label || "世界变化");
       copy.append(el("strong", "", `${actor} ${label}`));
-      const detail = translateNarrative(String(activity.reason || activity.summary || "").trim());
+      const detail = person?.profile || translateNarrative(String(activity.reason || activity.summary || "").trim());
       if (detail) copy.append(el("p", "", detail));
       row.append(copy);
       root.append(row);
@@ -121,7 +120,6 @@ export function renderPeople() {
 
 export function updateCharacterSheet(person) {
     const name = person?.name || person?.id || "人物";
-    const active = person?.status === "executing" || person?.status === "paused";
     $("character-name").textContent = name;
     paintAvatar($("character-avatar"), person);
     const place = person?.location || person?.location_id || state.view?.location?.name || "附近";
@@ -131,8 +129,9 @@ export function updateCharacterSheet(person) {
       : place;
     $("character-status").textContent = personActivityLine(person);
     const relationshipCard = $("character-relationship");
-    if (relationshipCard) {
-      const relationship = (state.view?.relationships || []).find((item) => item.person === person?.id);
+    const relationship = (state.view?.relationships || []).find((item) => item.person === person?.id);
+    relationshipCard?.classList.toggle("hidden", !relationship);
+    if (relationshipCard && relationship) {
       const strength = Number(relationship?.strength || 0);
       const labels = uiConfig().relationship_labels || {};
       const defaults = { trust: "信任", affinity: "好感", respect: "尊重", friendship: "友谊" };
@@ -143,14 +142,40 @@ export function updateCharacterSheet(person) {
       $("relationship-fill").style.width = `${Math.max(0, Math.min(100, (strength + 1) * 50))}%`;
       $("relationship-note").textContent = relationship?.description
         || (relationship ? "这次互动会被记住。" : "还没有互动记录。");
-      relationshipCard.classList.remove("hidden");
     }
     const intent = $("character-intent");
     if (intent) {
-      const detail = translateNarrative(String(latestActivityFor(person?.id)?.activity?.reason || "").trim());
+      const detail = person?.profile || translateNarrative(String(latestActivityFor(person?.id)?.activity?.reason || "").trim());
       intent.textContent = detail;
       intent.classList.toggle("hidden", !detail);
     }
+    const interactions = $("resident-interactions");
+    interactions.replaceChildren();
+    const choices = el("div", "resident-choices");
+    for (const topic of person.topics || []) {
+      const ask = el("button", "button ghost", topic.question);
+      ask.type = "button";
+      ask.disabled = !person.can_talk;
+      ask.addEventListener("click", () => sendDialogue({ target: person.id, topic: topic.id, message: topic.question, button: ask }));
+      choices.append(ask);
+    }
+    const help = person.help_behavior && person.can_talk && (state.view?.actions || [])
+      .find((action) => action.ref === `behavior:${person.help_behavior}`);
+    if (help) {
+      const offer = el("button", "button primary", help.choice || help.name);
+      offer.type = "button";
+      offer.addEventListener("click", () => {
+        closeCharacter();
+        beginAction(help);
+      });
+      choices.append(offer);
+    }
+    interactions.append(choices);
+    if (!person.can_talk) interactions.append(el("p", "hint", "这会儿对话会打断手上的活，等忙完再聊。"));
+    interactions.classList.toggle("hidden", !choices.childElementCount && person.can_talk);
+    $("talk-message").disabled = !person.can_talk;
+    $("talk-send").disabled = !person.can_talk;
+
   }
 
 
@@ -165,7 +190,7 @@ export function openCharacter(person) {
     updateCharacterSheet(person);
     $("character-drawer").classList.remove("hidden");
     loadDialogue(person.id);
-    window.setTimeout(() => $("talk-message")?.focus(), 80);
+    if (person.can_talk && !person.topics?.length) window.setTimeout(() => $("talk-message")?.focus(), 80);
   }
 
 

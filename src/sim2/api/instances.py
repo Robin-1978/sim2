@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from contextlib import closing
+from tempfile import NamedTemporaryFile
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -66,6 +68,41 @@ class InstanceRegistry:
             except (TypeError, ValueError, json.JSONDecodeError):
                 result[str(row["key"])] = row["value"]
         return result
+
+    def upgrade_bundled_for_play(self, path: Path) -> dict[str, Any] | None:
+        """Upgrade a recognized bundled save before opening it for play."""
+
+        from worlds import world_path
+        from ..bootstrap.service import load_yaml, upgrade_instance
+
+        path = Path(path).expanduser().resolve()
+        saved = self._metadata(path)
+        source = (saved.get("bootstrap_report") or {}).get("config_dir")
+        if not source:
+            return None
+        try:
+            package = world_path(str(saved.get("world_id") or "")).resolve()
+        except (FileNotFoundError, ModuleNotFoundError, ValueError):
+            return None
+        if Path(source).resolve() != package:
+            return None
+        manifest = load_yaml(package, "manifest.yaml", {})
+        previous = saved.get("config_version")
+        if previous == manifest.get("config_version") or previous not in (manifest.get("upgrade_from") or []):
+            return None
+        directory = path.parent / "snapshots"
+        directory.mkdir(exist_ok=True)
+        with NamedTemporaryFile(prefix="before-package-upgrade-", suffix=".sqlite3", dir=directory, delete=False) as handle:
+            snapshot = Path(handle.name)
+        try:
+            with closing(sqlite3.connect(f"{path.as_uri()}?mode=ro", uri=True)) as old:
+                with closing(sqlite3.connect(snapshot)) as backup:
+                    old.backup(backup)
+        except Exception:
+            snapshot.unlink(missing_ok=True)
+            raise
+        outcome = upgrade_instance(package, path, preserve_controllers=True)
+        return {**outcome, "snapshot": str(snapshot), "from": previous, "to": manifest["config_version"]}
 
     def describe(self, path: Path) -> dict[str, Any]:
         path = Path(path).resolve()

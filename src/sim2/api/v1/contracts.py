@@ -101,6 +101,9 @@ class RuntimeV1(ProjectionModel):
 
 class PlayerEntryV1(ProjectionModel):
     status: str
+    instance_id: str = ""
+    config_version: str = ""
+    session_generation: str = ""
     world_id: str = ""
     entry_location: dict[str, Any] | None = None
     origins: list[dict[str, Any]] = Field(default_factory=list)
@@ -193,6 +196,8 @@ class PlayerViewV1(ProjectionModel):
     recent_outcomes: list[dict[str, Any]] = Field(default_factory=list)
     nearby_entities: list[dict[str, Any]] = Field(default_factory=list)
     nearby_participants: list[dict[str, Any]] = Field(default_factory=list)
+    resident_count: int = 0
+    city_watch: dict[str, Any] = Field(default_factory=dict)
     recent_dialogue: list[dict[str, Any]] = Field(default_factory=list)
 
 

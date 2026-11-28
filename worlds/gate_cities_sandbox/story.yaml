@@ -22,6 +22,16 @@ emergent_source_event_types:
 - gatebuild.dispatch_reserved
 - gatebuild.shop_batch_sold
 - gatebuild.shop_road_opened
+- gatebuild.relief_open
+- gatebuild.relief_handout
+- gatebuild.relief_charter
+- gatebuild.relief_path_open
+- gatebuild.relief_path_use
+- gatebuild.crew_table
+- gatebuild.tender_signed
+- gatebuild.tender_hired
+- gatebuild.tender_closed
+- gatebuild.tender_public_work
 - entity.created
 - world.change.rule
 - definition.registered
@@ -35,18 +45,29 @@ context_events:
 - gatebuild.bridge_ready
 - gatebuild.shop_batch_sold
 - gatebuild.shop_road_opened
+- gatebuild.relief_open
+- gatebuild.relief_handout
+- gatebuild.relief_charter
+- gatebuild.relief_path_open
+- gatebuild.relief_path_use
+- gatebuild.crew_table
+- gatebuild.tender_signed
+- gatebuild.tender_hired
+- gatebuild.tender_closed
+- gatebuild.tender_public_work
 - world.change.rule
 - entity.created
 context_properties:
   connected_count: 已建成门线
-  market_sales: 坊市实际成交
-  yard_sales: 货场实际成交
-  moved_workers: 迁居低城的工人
   trade_policy: 当前通行议约（1 共担维护，2 公开竞争，3 已发限行通知）
   embargo_countdown: 距货门限制生效的分钟数
   lockdown: 货门限制是否已经生效（1 已生效）
-  appointment: 枢门班长获任
-  shop_cash: 工坊周转金
-  shop_batches: 已实际结算的路石批次
-  shop_dividends: 工坊已付分红
+  relief_phase: 粮食议事是否仍开放（1 开着，0 结案）
+  relief_policy: 长期供粮条款（1 两城互济，2 农圃补收）
+  relief_path: 农圃近路是否竣工（1 已可走）
+  relief_path_use: 新路去向（0 待议，1 农圃早摊，2 工坊备料）
+  tender_mode: 当前合同（0 空闲，1 水庭，2 旧站）
+  tender_hired: 姚齐是否已获坊市工位（1 已获）
+  tender_irrigate: 农圃引水渠已通（1 已通）
+  tender_resurface: 旧站装货道已通（1 已通）
 beats: []

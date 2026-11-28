@@ -4,6 +4,28 @@ controller: manual
 inventory: {gate_core: 1, frame: 4, coin: 6, water: 2, meal: 2}
 initial_state: {home_location: high_lodges}
 initial_bt_ids:
+- relief_path_market
+- relief_path_freight
+- relief_buy_yard
+- relief_early_harvest
+- relief_feed_neighborhood
+- relief_commission_path
+- relief_ratify_trade
+- relief_ratify_growers
+- relief_keep_reserves
+- set_up_crew_table
+- sign_court_tender
+- sign_yard_tender
+- tender_supply
+- tender_unload
+- tender_mason_yard
+- tender_mason_court
+- tender_haul
+- tender_receive_yard
+- tender_wait
+- tender_close
+- tender_irrigate
+- tender_resurface
 - travel
 - survey_exchange
 - survey_bridge
