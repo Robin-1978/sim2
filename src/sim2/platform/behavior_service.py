@@ -223,6 +223,7 @@ class BehaviorExecutionService(PlatformService):
             {recipe["id"]: recipe} if recipe else {},
             self.route_distance,
             capabilities=agent.get("capabilities", {}),
+            inventory=agent.get("inventory", {}),
             capability_modifiers=(self.store.repositories.metadata.get("rules", {}) or {}).get("capability_modifiers", {}),
             travel_speed=lambda values: movement_speed(self.store, agent, values),
             phase_duration=partial(day_phase_duration, self.store),

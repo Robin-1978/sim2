@@ -478,14 +478,19 @@ class StoryRuntimeMixin:
         source_id = _source_identity(source_event)
         stage_id = str(source_event.get("stage_id") or "")
         audience_key = tuple(sorted(str(item) for item in submission.audience))
+        summary_signature = _signature(beat.get("summary"))
         for prior in submission.state.get("emergent_beats", []) or []:
             if not isinstance(prior, dict):
                 continue
+            prior_audience = tuple(sorted(str(item) for item in (prior.get("audience") or [])))
+            if prior_audience != audience_key:
+                continue
+            if len(summary_signature) >= 16 and _signature(prior.get("summary")) == summary_signature:
+                return {"status": "wait", "reason": "A materially identical chapter already reached this audience; wait for new evidence."}
             if (
                 str(prior.get("source_event_type") or "") == source_type
                 and str(prior.get("source_event_source_id") or "") == source_id
                 and str(prior.get("source_event_stage_id") or "") == stage_id
-                and tuple(sorted(str(item) for item in (prior.get("audience") or []))) == audience_key
                 and (tuple(sorted(str(item) for item in (prior.get("unlock_behavior_ids") or []))) or _NO_FOLLOWUP) == candidate_followups
                 and (candidate_followup_values or _narrative_signature(" ".join(str(prior.get(key) or "") for key in ("summary", "fact", "goal_hint"))) == candidate_content)
             ):
@@ -520,8 +525,11 @@ class StoryRuntimeMixin:
             self.store.repositories.metadata.set("story_state", state)
             for audience_id in audience:
                 self._grant_to_audience_member(submission, audience_id)
+            source_event = submission.source_event
             event_id = self._context.services["events"].append("story.beat.activated", actor_id, minute, {
                 "beat_id": beat_id,
+                **({"source_event_id": source_event["event_id"], "source_event_type": source_event["event_type"]}
+                   if source_event else {}),
                 "title": str(beat.get("agent_label") or beat.get("summary") or beat_id),
                 "summary": beat.get("summary", ""),
                 "fact": beat.get("fact") or proposal.get("fact") or "",
@@ -531,7 +539,6 @@ class StoryRuntimeMixin:
                 "public_event": beat.get("public_event"),
                 "reason": proposal.get("reason", ""),
             })
-            source_event = submission.source_event
             remember_role(self.store, "story", "story_thread", {
                 "summary": str(beat.get("summary") or beat.get("fact") or ""),
                 "beat_id": beat_id,

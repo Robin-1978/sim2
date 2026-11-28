@@ -25,15 +25,13 @@ def _player_chapter(platform: Platform, player_id: str) -> dict[str, Any] | None
     precedence over opening anchors for the audience they were addressed to.
     """
 
-    ending = _configured_ending(platform, player_id)
+    events_repo = platform.store.repositories.events
+    event = events_repo.latest_chapter_for_player(player_id)
+    ending = _configured_ending(platform, player_id, event)
     if ending is not None:
         return ending
 
-    events_repo = platform.store.repositories.events
-    for event in events_repo.recent_events_by_types(["story.beat.activated"], limit=24):
-        audience = [str(item) for item in (event.get("audience") or []) if str(item)]
-        if audience and player_id not in audience and "player" not in audience:
-            continue
+    if event:
         title = str(event.get("title") or event.get("summary") or event.get("beat_id") or "当前篇章")
         return {
             "id": str(event.get("beat_id") or title),
@@ -86,7 +84,7 @@ def _player_chapter(platform: Platform, player_id: str) -> dict[str, Any] | None
     return None
 
 
-def _configured_ending(platform: Platform, player_id: str) -> dict[str, Any] | None:
+def _configured_ending(platform: Platform, player_id: str, chapter: dict[str, Any] | None) -> dict[str, Any] | None:
     """Return the first configured season ending whose condition is true."""
 
     story = platform.store.repositories.metadata.get("story", {}) or {}
@@ -116,16 +114,8 @@ def _configured_ending(platform: Platform, player_id: str) -> dict[str, Any] | N
         if trigger_event:
             trigger_rows = platform.store.repositories.events.recent_events_by_types([trigger_event], limit=1)
             trigger_id = int((trigger_rows[0].get("event_id", 0) if trigger_rows else 0) or 0)
-            if trigger_id:
-                for beat in platform.store.repositories.events.recent_events_by_types(["story.beat.activated"], limit=24):
-                    audience = [str(item) for item in (beat.get("audience") or []) if str(item)]
-                    if audience and player_id not in audience and "player" not in audience:
-                        continue
-                    if int(beat.get("event_id", 0) or 0) > trigger_id:
-                        # A Story beat proposed after the ending wins the
-                        # chapter card.  The ending remains the fallback for
-                        # players who have not received post-ending content.
-                        return None
+            if trigger_id and chapter and chapter["event_id"] > trigger_id:
+                return None
         return {
             "id": str(ending["id"]),
             "title": str(ending.get("title") or ending["id"]),
@@ -143,7 +133,7 @@ def _configured_ending(platform: Platform, player_id: str) -> dict[str, Any] | N
             "event_id": trigger_id,
             "world_minute": int(platform.store.repositories.metadata.get("world_minute", 0) or 0),
             "kind": str(ending.get("kind") or "ending"),
-            "ended": True,
+            "ended": ending.get("kind") != "stage",
         }
     return None
 
@@ -570,6 +560,13 @@ def build_player_view(platform: Platform, player_id: str) -> dict[str, Any]:
             "kind": "travel",
         })
     player_projection = dict(decision.get("self", {}) or {})
+    origin_id = agent.get("origin_id")
+    if origin_id:
+        template = platform.store.repositories.metadata.get("player_template", {}) or {}
+        player_projection["origin_name"] = next(
+            (origin["name"] for origin in template.get("origins", [])
+             if origin.get("id") == origin_id and origin.get("name")), ""
+        )
     player_projection["location_id"] = current_id
     player_projection["location_safe"] = bool(current.get("safe", False))
     player_projection["location_tags"] = list(current.get("tags") or [])

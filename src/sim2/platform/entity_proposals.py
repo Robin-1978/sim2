@@ -112,7 +112,7 @@ class EntityProposalRuntimeMixin:
             with self.store.transaction():
                 self.store.repositories.evolution.create_intent(intent_id, actor_id, "propose_entity", submission.data, world_minute)
                 if plan.agent_state is not None:
-                    self._write_agent(entity_id, proposal, plan.agent_state)
+                    self._write_agent(entity_id, proposal, plan.agent_state, world_minute)
                 else:
                     self._write_structure(submission, plan, world_minute)
                 event_id = self._context.services["events"].publish("entity.created", actor_id, world_minute, {"intent_id": intent_id, "entity_id": entity_id, "entity_type": plan.entity_type, "name": proposal.get("name"), "summary": proposal.get("description", "")}, wake="configured")
@@ -142,8 +142,11 @@ class EntityProposalRuntimeMixin:
             return self._reject_entity(submission, "The proposed research source would be unreachable for its assignees; nothing was created.", "entity_unreachable", exc.errors)
         return result
 
-    def _write_agent(self, entity_id: str, proposal: dict[str, Any], agent_state: dict[str, Any]) -> None:
+    def _write_agent(self, entity_id: str, proposal: dict[str, Any], agent_state: dict[str, Any], world_minute: int) -> None:
         self.store.repositories.entities.put_agent(entity_id, agent_state, str(proposal["name"]))
+        evolution = self.store.repositories.metadata.get("evolution", {}) or {}
+        schedule = evolution.get("evolution", evolution).get("schedule") or {}
+        self.store.repositories.evolution.sync_resident_cadence(agent_state, world_minute, schedule)
         for knowledge in agent_state.get("knowledge_seed", []):
             if not isinstance(knowledge, dict):
                 continue

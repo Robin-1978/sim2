@@ -5,17 +5,17 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="description" content="sim2 游戏客户端">
   <title>sim2</title>
-  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%230b2426'/%3E%3Cpath d='M8 39c8-8 16 8 24 0s16 8 24 0' fill='none' stroke='%2365d8c2' stroke-width='5' stroke-linecap='round'/%3E%3Ccircle cx='46' cy='18' r='5' fill='%23efb26f'/%3E%3C/svg%3E">
-  <link rel="stylesheet" href="/app.css?v=27">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='12' fill='%2310181c'/%3E%3Ccircle cx='32' cy='32' r='24' fill='none' stroke='%23c6a06b'/%3E%3Cpath d='M32 8Q34 30 52 32Q34 34 32 56Q30 34 12 32Q30 30 32 8Z' fill='%23f1d6a7'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="/app.css?v=29">
 </head>
 <body>
-  <a class="skip-link" href="#center-stage">跳到主要画面</a>
+  <a class="skip-link" href="#game">跳到主要画面</a>
 
   <header class="hud">
     <div class="hud-world">
-      <span class="hud-mark">s2</span>
+      <span class="waymark" aria-hidden="true">✦</span>
       <div>
-        <span class="hud-eyebrow">SIM2 世界</span>
+        <span class="hud-eyebrow">SIM2</span>
         <strong id="hud-world-title">正在载入…</strong>
       </div>
     </div>
@@ -24,18 +24,20 @@
       <div class="clock-time"><strong id="hud-time">07:00</strong><span id="hud-phase">清晨</span></div>
     </div>
     <div class="hud-status">
-      <span id="runtime-pill" class="pill">手动世界</span>
       <span id="conn-dot" class="conn-dot offline" title="连接状态"></span>
       <button id="hud-worlds" class="icon-button" type="button" title="世界大厅" aria-label="世界大厅"></button>
-      <button id="hud-editor" class="icon-button" type="button" title="世界编辑器" aria-label="世界编辑器"></button>
       <button id="hud-sound" class="icon-button" type="button" title="环境音" aria-label="切换环境音" aria-pressed="false"></button>
-      <button id="hud-refresh" class="icon-button" type="button" title="刷新世界" aria-label="刷新世界"></button>
       <button id="hud-settings" class="icon-button" type="button" title="设置与管理" aria-label="设置与管理"></button>
     </div>
   </header>
 
-  <main id="game" class="game-grid hidden">
-    <aside class="left-rail" aria-label="角色">
+  <main id="game" tabindex="-1" class="game-grid hidden" data-screen="scene">
+    <nav class="game-nav" aria-label="游戏画面">
+      <button type="button" data-screen="scene" aria-controls="center-stage" aria-pressed="true">探索</button>
+      <button type="button" data-screen="character" aria-controls="character-screen" aria-pressed="false">角色</button>
+      <button type="button" data-screen="journal" aria-controls="journal-screen" aria-pressed="false">纪事</button>
+    </nav>
+    <aside id="character-screen" class="left-rail" aria-label="角色">
       <section class="panel character-panel">
         <div class="character-head">
           <div id="player-portrait" class="portrait">?</div>
@@ -69,6 +71,19 @@
     </aside>
 
     <section id="center-stage" class="center-stage" aria-label="场景与行动">
+      <section class="player-summary" aria-label="我的角色">
+        <div class="summary-identity">
+          <span id="summary-avatar" class="summary-avatar" aria-hidden="true"></span>
+          <div><strong id="summary-name"></strong><span id="summary-origin"></span></div>
+        </div>
+        <p id="summary-goal" class="summary-goal"></p>
+        <dl id="summary-stats" class="summary-stats"></dl>
+        <button id="scene-player-bag" type="button" class="summary-bag" aria-haspopup="dialog" aria-controls="player-drawer">行囊</button>
+      </section>
+      <section id="recap-card" class="panel recap-card hidden" aria-live="polite">
+        <div class="panel-title"><div><span class="eyebrow">回来啦</span><h2 id="recap-title">最近发生</h2></div><button id="recap-dismiss" class="text-button" type="button">收起</button></div>
+        <div id="recap-list" class="recap-list"></div>
+      </section>
       <section class="panel scene-panel">
         <div id="scene-countdown" class="scene-countdown hidden"></div>
         <div id="scene-art" class="scene-art" data-scene="harbor">
@@ -154,7 +169,7 @@
 
       <section class="panel actions-panel">
         <div class="panel-title actions-heading">
-          <h2>可以做什么</h2>
+          <h2>选择行动</h2>
           <div id="action-filters" class="segmented" role="tablist" aria-label="行动筛选"></div>
         </div>
         <div id="recommended-action" class="recommended-action"></div>
@@ -197,11 +212,8 @@
 
     </section>
 
-    <aside class="right-rail" aria-label="世界动态">
-      <section id="recap-card" class="panel recap-card hidden" aria-live="polite">
-        <div class="panel-title"><div><span class="eyebrow">回来啦</span><h2 id="recap-title">最近发生</h2></div><button id="recap-dismiss" class="text-button" type="button">收起</button></div>
-        <div id="recap-list" class="recap-list"></div>
-      </section>
+    <aside id="journal-screen" class="right-rail" aria-label="世界动态">
+
       <section class="panel world-panel">
         <div class="panel-title"><h2>世界状态</h2><span class="hint">公共账目</span></div>
         <div id="world-pulse" class="world-pulse empty">
@@ -215,11 +227,11 @@
           <button class="button ghost compact" data-wait-minutes="240" type="button">4 小时</button>
           <span id="time-progress" class="time-progress hidden" aria-hidden="true"><i></i></span>
         </div>
-        <p class="hint world-evolution-hint">等待时居民会继续决策；随时可以停止推进。Story 与 God 会根据已验证事件持续生成新章节和新结构。</p>
+        <p class="hint world-evolution-hint">等待期间，居民也会行动。你可以随时停止。</p>
       </section>
 
       <section class="panel feed-panel">
-        <div id="right-tabs" class="segmented tabs" role="tablist" aria-label="右侧面板">
+        <div id="right-tabs" class="segmented tabs" role="tablist" aria-label="世界纪事">
           <button class="segment active" data-tab="feed" type="button">动态</button>
           <button class="segment" data-tab="talk" type="button">人物</button>
           <button class="segment" data-tab="trade" type="button">交易</button>
@@ -257,16 +269,19 @@
   </main>
 
   <footer class="footer">
-    <span>sim2 · <span id="js-build">web-game-v27</span></span>
+    <span>sim2 · <span id="js-build">web-game-v29</span></span>
     <span id="last-update">尚未同步</span>
   </footer>
 
   <div id="entry-screen" class="entry-screen hidden">
-    <div class="entry-bg" aria-hidden="true"><span></span><span></span><span></span></div>
+    <div id="entry-cover" class="entry-cover" aria-hidden="true"></div>
+    <header class="entry-masthead">
+      <div class="title-signature"><span class="waymark" aria-hidden="true">✦</span> SIM2</div>
+      <button id="entry-open-editor" class="text-button" type="button">世界编辑器</button>
+    </header>
     <div class="entry-shell">
       <section class="entry-main" aria-labelledby="entry-title">
         <header class="entry-hero">
-          <div id="entry-cover" class="entry-cover" aria-hidden="true"></div>
           <div class="entry-heading">
             <span id="entry-genre" class="eyebrow">世界大厅</span>
             <h1 id="entry-title">世界</h1>
@@ -327,7 +342,6 @@
           <div id="entry-instance-list" class="entry-instance-list"></div>
           <div class="entry-panel-actions">
             <button id="entry-create-toggle" class="button ghost wide" type="button">创建新世界</button>
-            <button id="entry-open-editor" class="text-button" type="button">世界编辑器</button>
           </div>
         </section>
 
@@ -368,7 +382,8 @@
         <button id="settings-open-worlds" class="button ghost wide" type="button">打开世界大厅 / 新建世界</button>
       </div>
       <div class="drawer-section">
-        <h3>同步推进</h3>
+        <div class="panel-title"><h3>同步推进</h3><span id="runtime-pill" class="pill">手动世界</span></div>
+        <button id="settings-refresh" class="button ghost" type="button">刷新世界状态</button>
         <p class="hint">手动行动会以同一个世界 tick 推进 NPC 决策。这里可以选择推进所用模型。</p>
         <label>同步推进模型<select id="settings-provider" class="compact-select"></select></label>
         <div class="form-row">
@@ -522,6 +537,6 @@
   <div id="toasts" class="toasts" aria-live="polite"></div>
 
   <!-- bump ?v= whenever app.js/app.css changes so stale tabs refetch -->
-  <script type="module" src="/app.js?v=27"></script>
+  <script type="module" src="/app.js?v=29"></script>
 </body>
 </html>

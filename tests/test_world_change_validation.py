@@ -203,6 +203,20 @@ def test_relationship_is_stored_between_canonical_ids(platform: Platform) -> Non
     assert json.loads(row["data_json"]) == {"strength": 0.7}
 
 
+def test_god_relationship_delta_changes_strength_and_preserves_history(platform: Platform) -> None:
+    bond = {"from": "林泊", "to": "何砚", "type": "convoy"}
+    def propose(**fields):
+        return platform.submit_world_change("god", {"change_type": "relationship", "summary": "护航之约",
+                                                     "relationship": {**bond, **fields}})
+
+    assert propose(delta=0.2, description="救回斥候")["effect"]["relationship"]["relation_strength"] == 0.2
+    assert propose(delta=0.9)["effect"]["relationship"]["relation_strength"] == 1.0
+    for invalid in ({"delta": "两成"}, {"delta": True}, {"delta": 0.1, "relation_strength": 0.5}):
+        assert propose(**invalid)["failed_check"] == "relationship.delta"
+    row = platform.store.connection.execute("SELECT data_json FROM relationship WHERE relation_type='convoy'").fetchone()
+    assert json.loads(row["data_json"]) == {"description": "救回斥候", "relation_strength": 1.0}
+
+
 @pytest.mark.parametrize(
     ("change", "message", "failed_check"),
     [

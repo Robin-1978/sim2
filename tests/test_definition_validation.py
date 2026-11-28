@@ -12,9 +12,22 @@ from sim2.platform.definition_validation import (
     _check_resource_transfers,
 )
 from sim2.platform.runtime import Platform
+from sim2.world.definition_compiler import bind_legacy_inventory_effect, compile_definition_shape, effect_payload_error
 
 WORLD = Path(__file__).parents[1] / "worlds" / "three_lanterns_town"
 REGISTRY_TABLES = ("action_def", "bt_def", "recipe_def", "intent", "event_log", "agent_state", "evolution_task", "instance_meta")
+
+
+@pytest.mark.parametrize("duration", [
+    {"minutes": 60, "tool_bonuses": {"pick": 0.5}},
+    {"minutes": 60, "tool_bonuses": [{"item": "pick", "multiplier": True}]},
+    {"minutes": 60, "tool_bonuses": [{"item": "pick", "multiplier": 1.2}]},
+    {"minutes": 60, "tool_bonuses": [{"item": "pick", "multiplier": 0.5, "resource_tags": "stone"}]},
+    {"mode": "route_distance", "tool_bonuses": [{"item": "pick", "multiplier": 0.5}]},
+])
+def test_invalid_tool_duration_cannot_enter_the_action_schema(duration):
+    _, errors = compile_definition_shape("action", "gather", {"duration": duration})
+    assert any("duration.tool_bonuses" in error for error in errors)
 
 
 def transfer_action(**overrides: Any) -> dict[str, Any]:
@@ -56,6 +69,37 @@ def test_resource_transfer_that_matches_its_reservation_is_valid() -> None:
     errors: list[str] = []
     _check_resource_transfers(transfer_action(), errors)
     assert errors == []
+
+
+def test_unbound_bridge_toll_returns_actionable_feedback_before_registration(tmp_path):
+    platform = Platform(create_instance(WORLD, "generated-toll", tmp_path))
+    try:
+        action = {"id": "pay_rope_toll", "duration": {"minutes": 1}, "parameters": {"fiber_quantity": "integer"},
+                  "costs": {"reserve": {"item_parameter": "fiber", "item_quantity_parameter": "fiber_quantity"}},
+                  "effects": [{"type": "inventory.consume_item", "item_id": "context.fiber", "quantity_parameter": "fiber_quantity"},
+                              {"type": "relationship_delta", "from": "Scout", "to": "Player", "relationship_type": "trust", "delta": 0.1}],
+                  "success": {"result": "paid"}, "failure": {"result": "failed"}}
+        result = platform.submit_definition_proposal("god", {"definition_type": "action", "name": "Pay toll", "definition": action})
+        assert result["status"] == "rejected" and result["retryable"]
+        errors = " ".join(result["errors"])
+        assert all(term in errors for term in ("reserve.item_parameter", "inventory.consume_item requires item", "executing character"))
+        assert not platform.store.connection.execute("SELECT 1 FROM action_def WHERE id='pay_rope_toll'").fetchone()
+    finally:
+        platform.close()
+
+
+def test_saved_inventory_effect_binds_declared_item_and_quantity_together():
+    effect = {"type": "inventory_add", "item_id": "context.resource_id", "quantity_parameter": "fiber_quantity"}
+    declarations = {"resource_id": "string", "fiber_quantity": "integer"}
+    values = {"resource_id": "crew_fiber", "fiber_quantity": 4}
+    assert bind_legacy_inventory_effect(effect, declarations, values) == {
+        "type": "inventory_add", "item": "crew_fiber", "quantity": 4,
+    }
+    for schema, parameters in [
+        ({}, values), (declarations, {"fiber_quantity": 4}), (declarations, {"resource_id": "crew_fiber"}),
+        (declarations, {**values, "fiber_quantity": -1}), (declarations, {**values, "resource_id": "context.missing"}),
+    ]:
+        assert effect_payload_error(bind_legacy_inventory_effect(effect, schema, parameters))
 
 
 @pytest.mark.parametrize("section", ["reserve", "per_minute", "on_success", "on_failure", "refund"])

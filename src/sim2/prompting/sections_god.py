@@ -24,6 +24,8 @@ def _evolution_trigger_lines(context: dict[str, Any]) -> list[str]:
             lines.append(f"  required definition type: {trigger.get('required_definition_type')}")
         if trigger.get("assign_to"):
             lines.append(f"  assign the new behavior to: {plain(trigger.get('assign_to'))}")
+        if trigger.get("require_resident_assignee"):
+            lines.append("  Assign the follow-up to at least one autonomous resident who can perform it while the player is away.")
         if trigger.get("evidence_sources"):
             lines.append(f"  evidence selectors: {plain(trigger.get('evidence_sources'))}")
         if trigger.get("minimum_evidence") is not None:
@@ -333,6 +335,9 @@ def _season_plan_lines(context: dict[str, Any]) -> list[str]:
     lines = ["<season_plan>"]
     lines.append(f"  target cell: {plan.get('target_cell', 'unspecified')}")
     lines.append(f"  reason: {plan.get('reason', 'configured coverage target')}")
+    if mainline := plan.get("mainline"):
+        lines.append(f"  Mainline objective: {mainline['objective']}")
+        lines.append(f"  Player tradeoff: {mainline['player_choice']}")
     lines.append(f"  expires at world minute: {plan.get('expires_minute', 'unknown')}")
     behavior_action = plan.get("behavior_action")
     if behavior_action:

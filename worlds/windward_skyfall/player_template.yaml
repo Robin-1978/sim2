@@ -59,6 +59,7 @@ initial_bt_ids:
 - salvage_bone
 - harvest_amber
 - mine_crystal
+- cut_crystal_seam
 - salvage_relic
 - take_ration
 - forage_supplies
@@ -78,6 +79,7 @@ initial_bt_ids:
 - build_galley_2
 - build_garden_1
 - build_garden_2
+- build_cistern
 - build_infirmary_1
 - build_infirmary_2
 - build_hull_1

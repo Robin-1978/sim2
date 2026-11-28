@@ -1,7 +1,7 @@
 # Social Authority Loop — Current Goal and Open Issues
 
 Status: **ACTIVE**
-Last updated: 2026-11-27
+Last updated: 2026-11-28
 
 ## 1. User goal (verbatim)
 
@@ -380,3 +380,67 @@ world-pack lint covers every `worlds/*/actions.yaml`.
 - 继续同一份 Aster 存档。第 576 分钟 Mira 完成 `tally_capacitor_salvage_sweep`，Director 结清第二项计划，随后转向地点。第 700 分钟真实 God 将 `costs.reserve` 写成对象列表，旧校验让列表进入了资源能力检查，模拟因此中断。修复后重放原模型参数会得到 `action.costs.reserve must be an object`，五个成本区段都有拒绝与无部分注册回归。以第 700 分钟的 SQLite 存档重启，正常运行至 720。累计开过 8 项计划，完成 2 项、超时 5 项、在途 1 项，角色实际完成 4 种新增行为，Story 激活 7 个情节。跨计划成长已观察到，长期完成率仍待测量。
 
 迭代期间 `scripts/test_parallel.py --changed --workers 4` 选中的 1,550 项回归通过。第 700 分钟的修复之后又分别复跑了 101 项 DSL、行动绑定和风脊号用例，35 项社会提案、定义 schema 与发布包用例，以及 11 项垂直提案用例，全部通过。10 个世界包通过校验，最终 wheel 包含共享证据配置和 Aster 验证场景配置。`compileall` 和 `git diff --check` 通过。1,000 角色基准的 5 次测量中，单分钟推进的 p95 为 173.79 毫秒。
+
+### 2026-11-27 玩家标题画面与场景探索
+
+- 标题画面全屏使用世界封面。探索页用地点插画和浅纸色抉择卡呈现眼前的事件，角色、设施和公共纪事分别从导航进入。没有专属插画或抉择的世界沿用程序化画面和推荐行动。
+- Chromium 从空大厅打开世界选集，再以 1366×900 和 390×844 两种视口实际进入风脊号。桌面玩家从灯岬救回斥候，手机玩家收回铜料。两种视口都在第一屏显示了两个选项；雾溪村开场显示程序化封面和可用行动。
+- 浏览器回归覆盖键盘切换探索、角色、纪事和打开地图。拦住地图刷新请求，关闭弹窗后再放行响应，验证弹窗保持关闭且当前抉择仍然可见。
+
+- 已进入世界的玩家可在探索首页直接查看姓名、出身、地点、目标、属性和行囊。回归 `test_game_navigation_keeps_the_player_and_current_choice` 实际以制图师进入，验证 375×667、390×844 和 1366×900 三种视口的角色栏与首航选择同屏；打开行囊、按 Escape 返回、打捞铜料、刷新页面后，出身和新增物品种数均正确。
+
+### 风脊号 0.6 同首航分档实测
+
+- 三个独立存档使用相同随机种子 87231、机械师林晚和「拉回斥候」。God、Story、Director 使用本机配置的 `remote`（`deepseek-v4.1-flash`）。世界包提供基础生存机制、可提案的结构类型与结算边界，首航后续章节由 Story 提出。Director 可以读取本档近期相关事件和居民处境。保存专属上下文的隔离由 `test_director_reads_configured_history_from_its_own_save` 验证。
+- 在第 780 分钟对三个测试存档就地升级，保留已生成的行为、规则、章节与时钟。升级同步世界包的 Story 配置和提示词，使已有存档也能应用新策略。随后八名 NPC 均启用模型决策和既有离线 BT 回退。
+- 第 780 分钟保存副本通过正常玩家入口试玩。甲档「向风筝人问路」使风筝人声望从 0.35 升至 0.45，并登记引航交涉。乙档「请风筝人引航」令探索计数从 0 升至 1。回放发现传送效果曾将中文地名写进角色的位置字段，现解析为地图实体 `broken_span`。丙档在这个时间点没有新玩家行动可用。对应回归 `test_generated_guidance_uses_canonical_targets_or_rolls_back` 涵盖地点名称、ID、错误目标与整笔回滚。
+- `test_open_structural_contract_keeps_salvage_yields_bounded` 守住旧存档打捞动作的材料与产量约束。`test_emergent_story_chapter_takes_precedence_over_situation_anchors` 回放大量其他角色专属章节后，玩家仍可读到自己的章节。
+- 回放丙档实际 God 提案发现，关系的数值 `delta: 0.2` 原先只成为关系附加字段。在全新世界重放同一提案，风筝人到林晚的 `relation_strength` 现为 0.2。测试 `test_god_relationship_delta_changes_strength_and_preserves_history` 还验证重复增量、上下限、既有描述和错误输入回滚。此修复未改写早期历史事件。
+- 首轮规则在三档均有过超时。风脊号可把尚未被居民采用的新规则交回 God 复查。用真实 Platform 的 `test_unused_rule_wakes_god_then_closes_on_its_resident_followup` 验证登记事件进入跟进任务，规则由阿岚的实际行为履行后才结清。
+- 居民完成章节后，Agent 上下文会过滤已关闭章节留下的旧目标。章节完成事件保存实际行为事件编号和结算结果，并可按世界配置唤醒 Story，下一章可追到上一章究竟是谁做了什么。`test_story_beat_completes_after_audience_followup` 走普通行动入口，验证前后两次决策视图和对应的结算事件。`test_emergent_beat_commits_once_per_validated_result` 核对新章节的公开事件与事实来源。
+- 在第 1440 分钟对三档复核并同步新的规则跟进与 Story 唤醒配置。升级前后的分钟、完整 Story 状态、计划历史、规则和动态定义登记数一致。甲档两种生成行为已由阿岚完成。乙档生成的引航行为有 45 次居民执行。丙档的补桥绳选项曾获受理但未结算，重放其真实提案发现纤维参数未声明、消耗效果未指定合法物品字段。新定义会一次返回相关校验错误，旧定义缺少物品绑定时无法免费执行。确定性回归为 `test_unbound_bridge_toll_returns_actionable_feedback_before_registration`。在副本中将实测拒绝信息交给远程 God 后，它查看了定义，该轮没有提交替代行动。
+- 甲档的模型行动曾将声望写入临时字段 `kite rep`，乙档重复引航将 `kite_rep` 推到 4.77。真实行动副本回放中，阿岚现在改变世界登记的 `kite_rep`（0.27 → 0.32）与 `camp_morale`（0.90 → 0.91），阿筝的引航将越界旧值修回 1。Action 的变更事件使用实际值。世界声明的百分比上限和字段展示名来自已有的 `world_property_labels`。回归 `test_generated_effects_change_the_configured_reputation_and_report_its_limit` 覆盖中英文展示名及旧存档的重名字段。
+- 丙档第 1500 分钟收到「去风蚀林割纤维」，仅交给了离线玩家。在第 1680 分钟三档应用相同的居民跟进约束；其后的普通结构提案仍可生成玩家专属内容。跟进任务若只把行动给玩家，将得到可重试的结构反馈。回归 `test_crew_followup_can_include_a_player_and_requires_a_resident` 验证同一提案先被退回，补入模型自选居民后获准。单独的新档 180 分钟实测中，阿筝执行了 God 生成的「阿筝为林晚破例引航」，声望从 0.35 升至 0.45、探索数从 0 升至 1。
+- 第 1795 分钟，阿岚与阿筝结算信任变化 0.15，关系强度到 0.30（甲档事件 3303）。第 1800 分钟 Director 以该事件完成社会计划。丙档的 Director 重新转向行为后，阿筝在第 1880 分钟割取两份风蚀林纤维，第 1900 分钟完成搓绳，背包多出两份桥绳。后一动作扣体力，没有扣前一动作的纤维。这两条库存记录可证明有新玩法被采用，但不能证明交付或材料守恒。
+- 新包另开三份零分钟存档复测，仍然使用同一身份、种子和首航选择。240 分钟时，真实 Director 分别选择社会、规则、规则。甲档居民执行了两次新增行为，玩家有两种新选项；乙、丙仅登记新规则，均未观察到居民采用。短测按严格标准返回失败，三个模型有回复和文案不同均不足以认定世界分化。
+- 丙档继续运行后，第 2115 分钟 God 向阿筝开放「给风筝人补桥绳」。第 2145 分钟阿筝完成交付，纤维从 14 份减到 10 份，风筝人声望从 0.43 升到 0.51（行为完成事件 3857、声望事件 3853）。这是丙档另行产生并实际扣料的行动。
+- 甲档计划在第 2520 分钟到期。God 多次耗尽工具预算后，剩余窗口不断减半，第 2517、2518 和 2519 分钟都有重试。现在初次失败仍可在短窗口内补试，反复耗尽预算后遵守世界的 Director 调度间隔。对第 2518 分钟事件的副本回放，下一次排期由 2519 变为 2548，超过旧计划期限时由调度器检查其有效性。回归 `test_budget_exhausted_structural_retry_fits_the_plan_window` 和 `retry-window-replay.json` 验证该差异。两日实测的原始事件仍保留旧重试节奏。
+- 三档都运行到第 2880 分钟，跨档玩家后果和居民实际采用的机制均通过检查。甲、乙、丙各有 9 个 Director 决定与已提交计划一致，各有 1 个计划结清、7 个到期、1 个仍在进行。God 有 199、223、168 条模型回复，Story 有 42、32、43 条回复。三档分别形成 18、17、22 章，其中 15、14、19 章有完成事件，3、2、4 章直接沿用上一章的居民行动结果。居民执行生成行为的次数分别为 84、155、79，对应 6、3、6 种生成行为。乙档 155 次中有 129 次是同一种引航，反复采用的次数与玩法丰富度应分别判断。
+- 在第 2880 分钟的三份独立副本中用正常玩家入口试玩首项生成行动。甲档问路改变交涉状态，乙档从灯岬抵达断桥，丙档在风蚀林收获 4 份纤维。丙档最初结算失败，原因是第 1500 分钟生成的旧动作通过 `item_id` 和 `quantity_parameter` 引用已声明的参数。旧档读取现可使用这种明确的绑定，同时拒绝缺少数值、数量非正或物品未绑定的动作。修复在原始副本重放，位置、库存和体力都按动作结算。`test_saved_inventory_effect_binds_declared_item_and_quantity_together` 和包含未声明参数的旧收费提案分别覆盖成功和回滚场景。
+- `scripts/verify_windward_divergence.py` 现在也要求每个存档的玩家能完成一个新增行动。两日原始记录及玩家重放位于 `artifacts/windward-open-seas-final/divergence.json`，修复前的对照位于同目录的 `divergence-before-legacy-bind.json`。短测 `artifacts/windward-release-sweep/divergence.json` 的乙、丙档在 240 分钟仍无新增可执行玩法。
+- 最终全量测试以 4 个独立进程运行，1,576 项通过。风脊号世界包验证、Python 字节码编译和 Git 空白检查通过。1,000 个角色的 5 轮 Platform 单步基准在本机的 P95 为 196.483 毫秒。
+
+### 2026-11-28 重复行动与主线导演
+
+- 从乙档逐个检查行为树与 Action 后确认。「替风脊号引航」完成了 129 次，另一个叫「结绳人向断桥看守确认欠账」的行为也调用同一个 Action，把它的居民完成数推到 136 次。风脊号现在按世界配置给生成的社会成就去重，并给其他生成行动设 90 分钟的居民共享间隔。测试 `test_generated_social_outcome_is_shared_by_residents_and_survives_reopening` 覆盖中英文显示名与 ID 等价、不同定义重用同一社会成果、并行结算、存档重开与玩家自己的首次机会。测试 `test_generated_resident_cooldown_uses_the_world_setting` 覆盖同时开工、暂时拒绝和时限结束后恢复。
+- 风脊号启用 `director.narrative_direction`。Director 的计划包含当前主线目标、玩家的两难和可核对的源事件。近期生成行动采用次数进入 Director 上下文。有效计划按世界配置唤醒 Story，计划简报同时进入 God 和 Story 的视图。测试 `test_director_wakes_story_only_from_a_grounded_mainline` 验证未出现在 Director 视图中的事件 ID 不得触发 Story。
+- 使用原乙档第 2880 分钟副本，把时钟设到上一项计划在第 3030 分钟到期的位置，独立验证远程角色交接。真实 Director 引用事件 5905，将三份铜料的分配立为当前主线，明确先保船和先偿还断桥配给债务的后果。计划事件 5906 唤醒 Story 并成为新章节的证据。居民点账失败后，Story 又依据实际行为失败事件 5930 写下一章，保留在场见证要求。该诊断副本的 God 执行 1 个会话，Story 执行 3 个会话。原存档没有改时钟。证据见 `artifacts/windward-pacing/mainline-final.json`。
+- 从第 2880 分钟的同一乙档复制两份，各用 `remote`（`deepseek-v4.1-flash`）续跑到第 3330 分钟。原规则再次结算同一引航 Action 42 次、点账 31 次。新规则的旧引航和点账均为 0 次，仍有居民结算代结欠账和绳桥作证，分别扣除库存中的一块备用铜板（事件 6056）与完成 Story 章节（事件 6245）。全体行动完成数 94 和 37，涉及不同 Action 8 种和 9 种。两个存档末尾的玩家副本都通过正常入口执行了「请风筝人引航」。该对照使用相同时间段。主线唤醒由单独的远程诊断副本验证。详见 `artifacts/windward-pacing/comparison.json` 和 `artifacts/windward-pacing/mainline-final.json`。
+- 主线、重复结算和直接提交的 4 个最终定向用例通过；行动受理、引用解析、演化配置、Director 及 Web 资产的 39 项回归通过。风脊号配置通过验证，`compileall` 和 `git diff --check` 通过。
+
+### 2026-11-28 风脊号采集工具
+
+- 石镐原先已是铜潮谷采铜和采煤的条件。新版世界包让铜镐替代石镐并缩短采集时间。采铜 90 → 54 分钟，采煤 75 → 45 分钟。矿石产量和采铜的风暴压力按原动作配置结算。
+- `duration.tool_bonuses` 按背包物品和可选材料标签选择最快的适用工具。石镐和铜镐能加快少量收集石块、陶土、玻璃砂与盐，石斧能加快木材和纤维，新增石刀配方能加快纤维、浆果、药草和蘑菇。晶锯能加快采晶石、取琥珀和拆鲸骨。采集预览、受理估算与行动结算共用计算，工具不扣除。测试从玩家入口核对时钟、产出及工具保留情况，浏览器核对采铜卡同时显示「54 分钟」和「铜镐省 36 分钟」。
+- `test_tool_upgrade_keeps_the_duration_of_an_active_mining_job` 验证升级前已经开的采煤仍按 75 分钟完成，新开工可用铜镐在 45 分钟完成。另在实际第 2880 分钟的乙档副本上应用 0.6.1，分钟、背包、Story 章节和 Director 历史一致，确认加载了石刀配方和采煤工具加速。原乙档通过只读连接复制。
+- 风脊号和浏览器回归 64 项通过，定义校验和行为接口回归 39 项通过，后来补充的木材加速与石斧不能加速药草两个用例通过。风脊号世界包校验、Python 字节码编译和 Git 空白检查通过。
+
+### 2026-11-28 风脊号补给与开放航段审查
+
+- 从空粮箱和水箱实际推进一天。旧世界基础口粮 2、二级花园和厨房合计 6，水由两条规则共同产 12。每人自然消耗 17.28 点饱食与 23.04 点水分。0.7 试玩中二级花园将口粮日产带到 10，并让药草生产与采收到独立库存。公共热饭用浆果与盐补六份口粮，个人口粮配方产六份，炖菜产四份。配方菜单显示具体投入与产出。
+- 新增蓄水槽与集水帆。基础每六小时收三份露水，升级后六份，水箱上限由 24 增至 36。第一份水和口粮可在营地直接用。验证：`test_cistern_collects_water_and_last_servings_are_usable` 和 `test_galley_batches_pay_for_ingredients_and_feed_pantry_or_player`。
+- 药园一级每十二小时长两份药草，二级四份；采收消耗实际库存。包扎用一份草药恢复 15 健康。验证：`test_garden_grows_herbs_for_harvesting_and_field_treatment`。
+- 元数据里的 `integrity` 展示为健康，首页同时显示健康、精力、水分、饱食。低精力时，浏览器建议能执行的休息行动。营地休息 90 分钟恢复 60 点精力，比空等恢复同量快 30 分钟。真实浏览器验证「精力 6%」与「继续航行」以及原首屏的角色和抉择布局。
+- 新档机械师以正常玩家入口从首航吊起铜料走到第 7 天离天，接着前往碎盐滩。共 120 次已结算行动，无预发资源或手改时钟，见 `artifacts/windward-balance/fresh-tour.json`。其中晶石采了 10 次，木材 9 次，铜矿 7 次。新加的整片晶脉动作实际产两块、耗时 120 分钟、涨 12 点风暴，比较两次用晶锯精采省 48 分钟、多涨 4 点。锚定耗两枚核心和 4 份纤维，并要求二级花园与风筝人信任。
+- 阶段结果继续推进同一存档。第 30 天发出云涌事件并增加风暴压力，正在进行的离天仍可结算。旧存档曾触发硬截止的，可再次尝试出航。迫降恢复临时船体、消耗库存，各路线会按各自后果开启下一航段，天气与补给继续。回归覆盖三条主动路线、迫降、跨第 30 天及旧存档恢复。
+- 在第 2880 分钟乙档副本准备测试信标条件，从正常玩家行动离天。第 3121 分钟开启下一航段，Director 在相同分钟根据已提交事件替换旧计划。用本机配置的 `remote`（`deepseek-v4.1-flash`）继续 180 分钟。God 登记两项定义，居民真实完成代结行为（第 3157 分钟），Story 激活并结清多段后续。可回看 `artifacts/windward-balance/stage-continuation.json`，其中包含首轮双唤醒造成的重复章节。新增归一化受众后的章节去重，使用双唤醒回归验证。
+- 10 个世界包通过校验。跨世界 DSL、行为、市场与潮汐回归 110 项通过。风脊号、Director 和浏览器的大组测试 82 项通过，旧首航 fixture 在锚定新增纤维成本后需补齐材料。补齐后重新跑过首航双分支、三条航段路线、旧截止解锁、蓄水和批量采集等 8 项，均通过。Story 和 Director 最终组 19 项通过。
+
+### 2026-11-28 动态航区、定居与章节接续
+
+- 首轮远程试验的 God 提案省略 `state.public`，地点和回程航线已登记，玩家地图仍看不到。工具参数现在明示公开地点所需的字段。`world.location.created` 和 `world.resource.created` 在世界包校验中列为已有生产者，世界可声明由新航点唤醒定居任务。`test_compact_evolution_is_valid_and_stored_compiled` 与实际远程链均用已有运行时事件通过校验。
+- 动态新增的 LLM 居民从入场分钟开始使用世界包的反思和创新周期。既有存档应用世界包配置时，补齐居民缺失的周期。定向用例覆盖入场后的到期时间和行为树控制的居民。远程测试档还记录了新居民的真实反思调用，以及后续创新任务。
+- 远程试验中 Director 返回了包含两个选项和取舍的结构化对象，原先只接收字符串，丢掉了第二份计划的剧情方向。现在接收两种形态，来源仍须是本轮看到的已提交事件。定向用例覆盖有效对象、缺少取舍和不可见来源。修复后的 `frontier-d` 两份计划都保存了结构化取舍并发出 `director.plan.started`。
+- 实验通过 `scripts/verify_frontier_growth.py --provider remote` 从单一泊位和遇险信号启动，无预写新地点、居民或章节。`frontier-c` 和 `frontier-d` 均在 20 个游戏分钟通过验证。五个角色均调用本机配置的 `deepseek-v4.1-flash`。两档都生成 Kettle Rock Mooring，随后分别生成 Clamp Yard Spur 与 Collar Yard Float，并分别迎来 Dessa Kettle 与 Bosun Halda Vey。玩家走正常入口抵达（事件 23），居民巡查（事件 31），Story 引用巡查信息（事件 28）激活章节（事件 34）。Director 以到达结清计划并开启下一份。重开存档仍能看到本档的新地点和居民。详情见 `artifacts/frontier-growth/frontier-c-summary.json` 和 `artifacts/frontier-growth/frontier-d-summary.json`。
+- `test_god_created_route_respects_authored_travel_gates` 在风脊号新档登记动态地点及带滑翔翼条件的新航行行为。装备前玩家没有可执行航行选项，装备后从真实玩家入口正常抵达。运行时插画、整船迁移及跨港生产、贸易和自治仍待实现与验证。
+- God、Director、演化配置、NPC 演化及 Story 的 44 项回归通过。风脊号动态航线和存档升级的 3 项用例通过。Python 字节码编译与 Git 空白检查通过。

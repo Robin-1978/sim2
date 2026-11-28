@@ -19,6 +19,22 @@ from scripts.audit_dynamic_evolution_loop import (
 from sim2.bootstrap.service import create_instance_from_template
 from sim2.platform.runtime import Platform
 from scripts.verify_automatic_growth import _baseline, _state
+from scripts.verify_windward_divergence import compare
+
+
+def test_save_comparison_requires_distinct_observed_mechanics():
+    def save(name):
+        return {"save": name, "seed": 17, "package_hash": "package", "properties": {"public_reserve": {}},
+                "registrations": [{"event_type": "entity.created", "entity_id": name, "entity_type": "location"}],
+                "uses": [], "adoptions": [{"actor": name, "behavior": name, "inventory": [],
+                                           "destination": name, "properties": []}]}
+
+    east, west = save("east"), save("west")
+    assert compare([east, west]) == ["distinct_used_mechanics_unproven:east:west"]
+    west["adoptions"][0]["properties"].append({"property": "public_reserve", "before": 0, "after": 2})
+    assert compare([east, west]) == []
+    west["seed"] = 42
+    assert compare([east, west]) == ["different_packages_or_seeds"]
 
 ABSORBING = "absorbing_state:three_rounds_without_structural_or_story_progress"
 

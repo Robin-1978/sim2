@@ -25,6 +25,7 @@ from ..world.navigation import (
     nearest_safe_location,
     reachable_locations,
 )
+from ..world.properties import world_property_key
 from ..world.rules import RuleCompiler
 from ..world.schema import AttributeSchema
 from ..actions.conditions import ConditionEngine
@@ -186,6 +187,7 @@ class WorldTickService(PlatformService):
             key = definition.get("world_property") or definition.get("property") or definition.get("need")
             if not key:
                 return None
+            key = self.world_property_key(str(key))
             before = float(properties.get(str(key), 0) or 0)
             after = before + float(definition.get("delta", 0) or 0)
             if definition.get("minimum") is not None:
@@ -193,16 +195,17 @@ class WorldTickService(PlatformService):
             if definition.get("maximum") is not None:
                 after = min(float(definition["maximum"]), after)
             if abs(after - before) > 1e-12:
-                self.set_world_property(str(key), after)
+                after = self.set_world_property(str(key), after)["after"]
             return {"type": effect_type, "property": str(key), "before": before, "after": after}
         if effect_type == "world_property_set":
             properties = dict(self.store.repositories.metadata.get("world_properties", {}) or {})
             key = definition.get("world_property") or definition.get("property") or definition.get("need")
             if not key:
                 return None
+            key = self.world_property_key(str(key))
             before = properties.get(str(key))
             value = resolve_binding(definition.get("value"), context)
-            self.set_world_property(str(key), value)
+            value = self.set_world_property(str(key), value)["after"]
             return {"type": effect_type, "property": str(key), "before": before, "after": value}
         if effect_type == "world_resource_delta":
             resource_ref = definition.get("resource_id") or definition.get("resource")
@@ -440,6 +443,9 @@ class WorldTickService(PlatformService):
                 changed_state = True
         return changed_state
 
+    def world_property_key(self, ref: str) -> str:
+        return world_property_key(self.store, ref)
+
     def set_world_property(self, key: str, value: Any) -> dict[str, Any]:
         """Update one world property and its shared-resource projection atomically.
 
@@ -451,6 +457,13 @@ class WorldTickService(PlatformService):
 
         properties = dict(self.store.repositories.metadata.get("world_properties", {}) or {})
         before = properties.get(str(key))
+        labels = (self.store.repositories.metadata.get("rules", {}) or {}).get("world_property_labels", {})
+        spec = labels.get(key)
+        if isinstance(spec, dict) and spec.get("unit") == "percent" and type(value) in (float, int):
+            if isinstance(spec.get("max"), (float, int)):
+                value = min(value, spec["max"])
+            if isinstance(spec.get("min"), (float, int)):
+                value = max(value, spec["min"])
         properties[str(key)] = value
         self.store.repositories.metadata.set("world_properties", properties)
         projection = self._sync_world_resource_projection(str(key), value)

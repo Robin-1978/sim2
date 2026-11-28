@@ -130,7 +130,7 @@ def test_windward_runner_delivers_the_named_stagnation_task_without_a_plan(tmp_p
         report = SimulationRunner(platform, {"god": provider}).run(1)
         assert report.god_sessions == 1
         assert STAGNATION_SUMMARY in provider.calls[0]
-        assert "dynamic_salvage" in provider.calls[0]
+        assert config["contracts"]["god_structural"]["purpose"] in provider.calls[0]
         assert not platform.ready_evolution_tasks()
     finally:
         platform.close()

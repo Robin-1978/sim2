@@ -42,8 +42,21 @@ objects:
       label: 花园
     - key: camp_morale
       label: 士气
+    - key: camp_herbs
+      label: 待采药草
+- id: camp_cistern
+  type: facility
+  name: 风脊号蓄水槽
+  initial_state:
+    location_id: lantern_cape
+    status: working
+  facility:
+    order: 4
+    properties:
+    - key: cistern_level
+      label: 集水帆
     - key: water
-      label: 蓄水
+      label: 淡水
 - id: camp_infirmary
   type: facility
   name: 风脊号药棚
@@ -51,7 +64,7 @@ objects:
     location_id: lantern_cape
     status: dim
   facility:
-    order: 4
+    order: 5
     properties:
     - key: infirmary_level
       label: 药棚

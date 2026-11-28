@@ -184,6 +184,9 @@ class StoryViewMixin:
                 validated_source["research_source"] = str(source_id)
         if str(source_event.get("event_type")) == "institution.allocation_completed":
             self._describe_allocation(validated_source, source_event)
+        if source_event.get("event_type") == "story.beat.completed" and source_event.get("behavior_label"):
+            validated_source["closed_thread"] = {"chapter": source_event.get("chapter_title", ""),
+                                                  "completed_choice": source_event["behavior_label"]}
         self._attach_source_fact(validated_source, source_event, actor_id)
         return validated_source
 

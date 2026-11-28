@@ -3,14 +3,16 @@ from __future__ import annotations
 from pathlib import Path
 
 from sim2.agents.tools import tool_schemas_for_role
-from sim2.bootstrap.service import create_instance
+from sim2.bootstrap.service import create_instance, upgrade_instance
 from sim2.intents.models import BehaviorIntent
 from sim2.platform.runtime import Platform
 from sim2.prompting.renderer import render_context
 
+WORLD = Path(__file__).parents[1] / "worlds" / "three_lanterns_town"
+
 
 def _town(tmp_path: Path, instance: str) -> Platform:
-    return Platform(create_instance(Path(__file__).parents[1] / "worlds" / "three_lanterns_town", instance, tmp_path / "runtime"))
+    return Platform(create_instance(WORLD, instance, tmp_path / "runtime"))
 
 
 def test_god_contract_exposes_all_world_content_paths():
@@ -63,6 +65,59 @@ def test_god_can_create_an_executable_character_from_configured_defaults(tmp_pat
         assert any(item["choice"] == "Inspect Cistern" for item in view["executable_behaviors"])
     finally:
         platform.close()
+
+
+def test_new_residents_use_the_world_cadence_from_their_arrival(tmp_path: Path):
+    platform = _town(tmp_path, "god-resident-cadence")
+    try:
+        metadata = platform.store.repositories.metadata
+        evolution = metadata.get("evolution")
+        root = evolution.get("evolution", evolution)
+        root["schedule"].update(agent_reflection_minutes=2, agent_innovation_minutes=5)
+        with platform.store.transaction():
+            metadata.set("evolution", evolution)
+        platform.step()
+        arrival = platform.status()["world_minute"]
+
+        def create_resident(name: str, controller: str) -> str:
+            result = platform.submit_entity_proposal("god", {
+                "entity_type": "agent", "name": name, "location_id": "lantern_square",
+                "state": {"role": "resident", "controller": controller,
+                          "ultimate_goal": "Inspect the water supply.", "initial_bt_ids": ["Inspect Cistern"]},
+            })
+            assert result["status"] == "accepted", result
+            return result["entity_id"]
+
+        resident = create_resident("Cistern Watcher", "llm")
+        deterministic_resident = create_resident("Cistern Gauge", "bt")
+        tasks = platform.store.connection.execute(
+            "SELECT actor_id,task_type,due_minute,cadence_minutes FROM evolution_task WHERE actor_id IN (?,?)",
+            (resident, deterministic_resident),
+        ).fetchall()
+        assert {tuple(row) for row in tasks} == {
+            (resident, "daily_reflection", arrival + 2, 2),
+            (resident, "weekly_innovation", arrival + 5, 5),
+        }
+        platform.step()
+        assert not any(task["actor_id"] == resident for task in platform.ready_evolution_tasks())
+        platform.step()
+        assert [task["task_type"] for task in platform.ready_evolution_tasks() if task["actor_id"] == resident] == ["daily_reflection"]
+        # Earlier saves had the resident but no recurring tasks. Apply the
+        # package's cadence at the current minute without replaying past turns.
+        with platform.store.transaction():
+            platform.store.connection.execute("DELETE FROM evolution_task WHERE actor_id=?", (resident,))
+        path = platform.store.db_path
+    finally:
+        platform.close()
+    upgrade_instance(WORLD, path)
+    restored = Platform(path)
+    try:
+        tasks = restored.store.connection.execute(
+            "SELECT task_type,due_minute,cadence_minutes FROM evolution_task WHERE actor_id=?", (resident,),
+        ).fetchall()
+        assert [tuple(task) for task in tasks] == [("daily_reflection", restored.status()["world_minute"] + 1440, 1440)]
+    finally:
+        restored.close()
 
 
 def test_god_prompt_describes_world_content_creation_beyond_institutions(tmp_path: Path):

@@ -578,6 +578,14 @@ they produce. That producer declaration is the narrow opt-in for a one-off
 event; the `wakes` consumer policy still decides grouping and cooldown. For
 events emitted by runtime infrastructure, define the consumer in `wakes`.
 
+`world.location.created` and `world.resource.created` are runtime events.
+For example, a wake on `world.location.created` can reference a God contract
+that settles the site with a resident. A God-created location connects to at
+least one existing neighbor. Set `state.public: true` to show it on the player
+map immediately. A world with `rules.travel.player_route_mode: authored`
+also needs a travel behavior the player can execute. New LLM residents start
+their configured reflection and innovation cadence from the minute they join.
+
 Use `on: 'rule:*'` for a direct task-prefix wake when a world rule should wake
 the same consumer. The runtime expands that wildcard into its task-prefix
 allowlist; ordinary event names remain exact and countable.

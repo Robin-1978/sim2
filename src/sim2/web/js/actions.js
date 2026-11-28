@@ -1,7 +1,7 @@
 import { request, write } from "./api.js";
 import { renderAll } from "./app.js";
 import { $, OPERATOR_KEY, PLAYER_KEY, describeError, el, setOnline, state, storageGet, storageSet, toast, withPending, worldIsOpen } from "./core.js";
-import { openActionDialog, renderTask } from "./render_actions.js";
+import { openActionDialog, renderMobileActionBar, renderTask } from "./render_actions.js";
 import { maybeCelebrateEvents } from "./celebration.js";
 import { openCreatePanel, renderEntry, renderEntryInstances } from "./render_entry.js";
 import { SKIP_EVENTS, bundleText, closeCharacter, closePlayerSheet, nearbyParticipants, parseBundle, personName, renderFeed, renderMap, showMapDialog, updateCharacterSheet } from "./render_panels.js";
@@ -58,7 +58,18 @@ export function returnToGame() {
       return;
     }
     enterGame();
-    if (!state.view) loadView().catch(() => {});
+    if (state.view) renderMobileActionBar();
+    else loadView().catch(() => {});
+  }
+
+
+export function showGameScreen(name) {
+    const game = $("game");
+    game.dataset.screen = name;
+    for (const button of game.querySelectorAll(".game-nav button")) {
+      button.setAttribute("aria-pressed", String(button.dataset.screen === name));
+    }
+    window.scrollTo({ top: 0, behavior: "instant" });
   }
 
 
@@ -96,7 +107,7 @@ export async function submitEntry(button, forcedPlayerId = null) {
         };
         storageSet(PLAYER_KEY, { id: state.playerId, token: state.playerToken, name: state.playerName });
         enterGame();
-        toast(result.resumed ? `已恢复角色 ${state.playerName}。` : `欢迎来到${state.world?.title || "这个世界"}，${state.playerName}。`, "ok");
+        showGameScreen("scene");
         await Promise.all([loadView(), loadRuntime()]);
         await Promise.allSettled([loadFeed(), loadDialogue(), loadTrades()]);
       } catch (error) {
@@ -822,7 +833,8 @@ export async function loadFeed(force = false) {
 export async function openMap() {
     if (!state.playerId) return;
     state.map = state.view?.map || state.map;
-    if (state.map) {
+    const openedFromCache = Boolean(state.map);
+    if (openedFromCache) {
       renderMap();
       showMapDialog();
     }
@@ -830,7 +842,7 @@ export async function openMap() {
       const map = await request(`/api/v1/map?viewer_id=${encodeURIComponent(state.playerId)}&observer=0`);
       state.map = map;
       renderMap();
-      showMapDialog();
+      if (!openedFromCache) showMapDialog();
     } catch (error) {
       if (!state.map) toast(describeError(error, "地图暂不可用"), "error");
     }

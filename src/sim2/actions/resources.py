@@ -40,15 +40,16 @@ class ResourceLedger:
                     required.append((str(item.get("item")), float(item.get("quantity", 0)), scope))
             elif key == "item_parameter":
                 item_id = parameters.get(str(value))
-                if item_id:
-                    quantity_parameter = reserve.get("item_quantity_parameter")
-                    amount = 1.0
-                    if quantity_parameter:
-                        raw_amount = parameters.get(str(quantity_parameter))
-                        if isinstance(raw_amount, bool) or not isinstance(raw_amount, (int, float)) or float(raw_amount) <= 0:
-                            return False, f"carried item quantity parameter {quantity_parameter} must be positive", []
-                        amount = float(raw_amount)
-                    required.append((str(item_id), amount, "agent"))
+                if not item_id:
+                    return False, f"carried item parameter {value} must name an item", []
+                quantity_parameter = reserve.get("item_quantity_parameter")
+                amount = 1.0
+                if quantity_parameter:
+                    raw_amount = parameters.get(str(quantity_parameter))
+                    if isinstance(raw_amount, bool) or not isinstance(raw_amount, (int, float)) or float(raw_amount) <= 0:
+                        return False, f"carried item quantity parameter {quantity_parameter} must be positive", []
+                    amount = float(raw_amount)
+                required.append((str(item_id), amount, "agent"))
             elif key == "resource_parameter":
                 resource_id = parameters.get(str(value))
                 amount = float((action.get("costs", {}).get("reserve", {}) or {}).get("resource_amount", 1) or 1)

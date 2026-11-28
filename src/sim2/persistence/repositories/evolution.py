@@ -42,6 +42,16 @@ class EvolutionRepository:
         else:
             self.store.connection.execute("UPDATE evolution_task SET cadence_minutes=? WHERE task_id=?", (cadence, task_id))
 
+    def sync_resident_cadence(self, agent: dict[str, Any], minute: int, schedule: dict[str, Any]) -> None:
+        llm_resident = agent.get("role") != "player" and str(agent.get("controller") or "llm").casefold() == "llm"
+        agent_id = str(agent["id"])
+        for prefix, task_type, key in (
+            ("reflection", "daily_reflection", "agent_reflection_minutes"),
+            ("innovation", "weekly_innovation", "agent_innovation_minutes"),
+        ):
+            cadence = int(schedule.get(key, 0) or 0) if llm_resident else 0
+            self.sync_recurring_task(f"{prefix}:{agent_id}", "agent_reflection", agent_id, task_type, minute, cadence)
+
     def due_evolution_tasks(self, world_minute: int) -> list[dict[str, Any]]:
         rows = self.store.connection.execute(
             "SELECT task_id,role,actor_id,task_type,due_minute,cadence_minutes,status,data_json FROM evolution_task WHERE due_minute<=? AND status='scheduled' ORDER BY due_minute,task_id",

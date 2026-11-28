@@ -206,6 +206,18 @@ class EventsRepository:
         ).fetchall()
         return [{"event_id": row["event_id"], "event_type": row["event_type"], "actor_id": row["actor_id"], "world_minute": row["world_minute"], **json.loads(row["data_json"])} for row in rows]
 
+    def latest_chapter_for_player(self, player_id: str) -> dict[str, Any] | None:
+        row = self.store.connection.execute(
+            """SELECT event_id,world_minute,data_json FROM event_log
+               WHERE event_type='story.beat.activated' AND (
+                   COALESCE(json_array_length(data_json,'$.audience'),0)=0
+                   OR EXISTS (SELECT 1 FROM json_each(data_json,'$.audience') WHERE value IN (?, 'player'))
+               ) ORDER BY event_id DESC LIMIT 1""", (player_id,),
+        ).fetchone()
+        if row is None:
+            return None
+        return {**json.loads(row["data_json"]), "event_id": row["event_id"], "world_minute": row["world_minute"]}
+
     def recent_outcomes_for_actor(self, actor_id: str, *, limit: int = 5) -> list[dict[str, Any]]:
         """Return behavior outcomes even when later action events are numerous."""
 

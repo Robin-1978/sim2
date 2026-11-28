@@ -99,7 +99,7 @@ export function renderGoals() {
     const chapterEyebrow = $("chapter-eyebrow");
     if (chapterEyebrow) {
       chapterEyebrow.textContent = chapter
-        ? (chapter.kind === "story" ? "自动演化" : (chapter.kind === "ending" ? "季末结局" : "当前态势"))
+        ? ({story: "自动演化", stage: "阶段完成", ending: "季末结局"}[chapter.kind] || "当前态势")
         : "公开篇章";
     }
     const chapterTitle = $("chapter-title");
@@ -117,7 +117,7 @@ export function renderGoals() {
       chapterGoal.classList.toggle("hidden", !text);
     }
     const goalsPanel = document.querySelector(".goals-panel");
-    if (goalsPanel) goalsPanel.classList.toggle("ending", chapter?.kind === "ending");
+    if (goalsPanel) goalsPanel.classList.toggle("ending", ["ending", "stage"].includes(chapter?.kind));
     const summary = $("goal-summary");
     if (summary) summary.textContent = goals.length ? `${goals.length} 项待完成` : "全部完成";
     if (!goals.length) {
@@ -314,7 +314,7 @@ export function renderEnding() {
     const overlay = $("ending-overlay");
     if (!overlay) return;
     const chapter = state.view?.chapter || null;
-    if (!chapter || chapter.kind !== "ending") {
+    if (!chapter || !["ending", "stage"].includes(chapter.kind)) {
       if (!overlay.classList.contains("hidden")) closeEnding(false);
       state.endingKey = "";
       return;
@@ -328,6 +328,7 @@ export function renderEnding() {
     if (state.endingKey === key && !overlay.classList.contains("hidden")) return;
     state.endingKey = key;
     $("ending-title").textContent = chapter.title || "季末结局";
+    $("ending-continue").textContent = chapter.kind === "stage" ? "继续航行" : "继续观察世界";
     $("ending-summary").textContent = chapter.summary || "";
     const goal = String(chapter.goal_hint || "").trim();
     $("ending-goal").textContent = goal;

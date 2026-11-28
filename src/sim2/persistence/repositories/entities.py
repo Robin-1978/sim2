@@ -188,6 +188,11 @@ class EntitiesRepository:
         rows = self.store.connection.execute(f"SELECT data_json FROM {table} ORDER BY id").fetchall()
         return [json.loads(row["data_json"]) for row in rows]
 
+    def get_generated_actions(self) -> list[dict[str, Any]]:
+        return [json.loads(row[0]) for row in self.store.connection.execute(
+            "SELECT data_json FROM action_def WHERE json_extract(data_json,'$.definition_source')='god_proposal'"
+        )]
+
     def update_agent(self, agent_id: str, data: dict[str, Any]) -> None:
         data = dict(data)
         data["agent_revision"] = int(data.get("agent_revision", 0) or 0) + 1

@@ -81,6 +81,9 @@ def story_lines(context: dict[str, Any]) -> list[str]:
         lines.append("<season_plan>")
         lines.append(f"  target cell: {plan.get('target_cell', 'unspecified')}")
         lines.append(f"  reason: {plan.get('reason', 'configured coverage target')}")
+        if mainline := plan.get("mainline"):
+            lines.append(f"  Mainline objective: {mainline['objective']}")
+            lines.append(f"  Player tradeoff: {mainline['player_choice']}")
         lines.append("  Use this as the arc's growth direction; do not claim a structural change the world has not made.")
         lines.append("</season_plan>")
     source = context.get("validated_source") or {}
@@ -95,6 +98,8 @@ def story_lines(context: dict[str, Any]) -> list[str]:
             lines.append(f"  research source: {line(source.get('research_source'))}")
         if source.get("allocation_summary"):
             lines.append(f"  allocations: {plain(source.get('allocation_summary'))}")
+        if source.get("closed_thread"):
+            lines.append(f"  completed chapter and actual choice: {plain(source['closed_thread'])}")
         lines.append("  Narrative must not add an unrecorded move, delivery, public reading, or gathering.")
     else:
         lines.append("  no validated source event; return wait")

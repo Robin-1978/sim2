@@ -158,7 +158,7 @@ behavior_trees:
   - actor.alive
   - context.day_phase != night
   - world.storm_stage < 2 or actor.inventory.storm_cloak >= 1
-  - (world.copper_tow_rig == 1 and actor.state.location_id == saltbreak_flats) or (actor.knowledge.explored:saltbreak_flats and actor.inventory.stone_pick >= 1)
+  - (world.copper_tow_rig == 1 and actor.state.location_id == saltbreak_flats) or (actor.knowledge.explored:saltbreak_flats and (actor.inventory.stone_pick >= 1 or actor.inventory.copper_pick >= 1))
   estimated_minutes: 100
   cooldown_minutes: 0
   nodes:
@@ -675,12 +675,12 @@ behavior_trees:
 - id: quarry_stone
   agent_label: 采石
   summary: 采石
-  description: 用石镐敲下五块石料。
+  description: 用镐敲下五份石料，铜镐更快。
   entry_conditions:
   - actor.alive
   - context.day_phase != night or actor.inventory.lantern >= 1
   - location.tag.flats
-  - actor.inventory.stone_pick >= 1
+  - actor.inventory.stone_pick >= 1 or actor.inventory.copper_pick >= 1
   estimated_minutes: 90
   cooldown_minutes: 0
   nodes:
@@ -840,12 +840,12 @@ behavior_trees:
 - id: mine_copper
   agent_label: 采铜
   summary: 采铜
-  description: 用石镐敲下两块铜矿。
+  description: 用镐敲下两份铜矿，铜镐更快。
   entry_conditions:
   - actor.alive
   - context.day_phase != night or actor.inventory.lantern >= 1
   - location.tag.copper
-  - actor.inventory.stone_pick >= 1
+  - actor.inventory.stone_pick >= 1 or actor.inventory.copper_pick >= 1
   estimated_minutes: 90
   cooldown_minutes: 0
   nodes:
@@ -868,12 +868,12 @@ behavior_trees:
 - id: mine_coal
   agent_label: 采煤
   summary: 采煤
-  description: 从煤层里收两块煤。
+  description: 用镐从煤层里收两份煤，铜镐更快。
   entry_conditions:
   - actor.alive
   - context.day_phase != night or actor.inventory.lantern >= 1
   - location.tag.copper
-  - actor.inventory.stone_pick >= 1
+  - actor.inventory.stone_pick >= 1 or actor.inventory.copper_pick >= 1
   estimated_minutes: 75
   cooldown_minutes: 0
   nodes:
@@ -1775,7 +1775,7 @@ behavior_trees:
   - actor.alive
   - location.tag.camp
   - world.beacon_frame >= 1
-  - world.beacon_cores >= 3
+  - world.beacon_cores >= 2
   - world.garden_level >= 2
   - world.kite_rep >= 0.4
   - world.ending_trigger == 0
@@ -1915,11 +1915,11 @@ behavior_trees:
 - id: rest_at_camp
   agent_label: 在营地休息
   summary: 在营地休息
-  description: 在灯岬的炉火边休息，恢复精力和体力。
+  description: 在灯岬的炉火边休息，恢复 60 点精力和 10 点健康。
   entry_conditions:
   - actor.alive
   - location.tag.camp
-  estimated_minutes: 240
+  estimated_minutes: 90
   cooldown_minutes: 0
   nodes:
   - type: action
@@ -1941,7 +1941,7 @@ behavior_trees:
   description: 在野外找个背风的地方睡一会儿。
   entry_conditions:
   - actor.alive
-  estimated_minutes: 180
+  estimated_minutes: 90
   cooldown_minutes: 0
   nodes:
   - type: action
@@ -1981,7 +1981,7 @@ behavior_trees:
 - id: sleep
   agent_label: 睡一觉（8 小时）
   summary: 睡一觉（8 小时）
-  description: 在风脊号上睡到下一次天亮。
+  description: 在风脊号上睡八小时，把精力恢复到满值。
   entry_conditions:
   - actor.alive
   - location.tag.camp
@@ -2048,12 +2048,12 @@ behavior_trees:
 - id: cook_meal
   agent_label: 做一锅热饭
   summary: 做一锅热饭
-  description: 用厨房的储备做一锅热饭，让所有人明天有口粮。
+  description: 用两份浆果和一份盐，给公共口粮箱补六份。
   entry_conditions:
   - actor.alive
   - location.tag.camp
   - world.galley_level >= 1
-  estimated_minutes: 60
+  estimated_minutes: 40
   cooldown_minutes: 0
   nodes:
   - type: action
@@ -2072,7 +2072,7 @@ behavior_trees:
 - id: tend_garden
   agent_label: 照料花园
   summary: 照料花园
-  description: 给花园浇水、补藤架，收一点口粮。
+  description: 用一份淡水照料花园，催熟两份待采药草。
   entry_conditions:
   - actor.alive
   - location.tag.camp
@@ -2268,3 +2268,54 @@ behavior_trees:
   - safety
   - purpose
   - belonging
+- id: drink_at_camp
+  agent_label: 在船上喝水
+  description: 直接喝一份淡水，恢复 40 点水分。
+  entry_conditions: [actor.alive, location.tag.camp]
+  nodes:
+  - {type: action, action_id: drink_at_camp, parameters: {resource_tag: water}}
+  goal_tags: [recovery, water]
+  drive_tags: [hydration]
+- id: eat_at_camp
+  agent_label: 在船上吃口粮
+  description: 直接吃一份口粮，恢复 35 点饱食。
+  entry_conditions: [actor.alive, location.tag.camp]
+  nodes:
+  - {type: action, action_id: eat_at_camp, parameters: {resource_tag: ration}}
+  goal_tags: [recovery, food]
+  drive_tags: [satiety]
+- id: build_cistern
+  agent_label: 架设集水帆
+  description: 更快地从云雾收水，并扩充营地水箱。
+  entry_conditions: [actor.alive, location.tag.camp, world.cistern_level == 0]
+  nodes:
+  - {type: action, action_id: build_cistern, parameters: {}}
+  goal_tags: [infrastructure, camp]
+  drive_tags: [purpose, safety]
+- id: harvest_camp_herbs
+  agent_label: 采收药园
+  description: 采两份可包扎、做药膏或做炖菜的药草。
+  entry_conditions: [actor.alive, location.tag.camp, world.garden_level >= 1]
+  nodes:
+  - {type: action, action_id: harvest_camp_herbs, parameters: {resource_tag: camp_herbs}}
+  goal_tags: [gathering, supply]
+  drive_tags: [purpose, safety]
+- id: dress_wounds
+  agent_label: 用药草包扎
+  description: 消耗一份药草，恢复 15 点健康。
+  entry_conditions: [actor.alive, actor.state.integrity <= 85, actor.inventory.herb >= 1]
+  nodes:
+  - {type: action, action_id: dress_wounds, parameters: {}}
+  goal_tags: [recovery]
+  drive_tags: [safety]
+- id: cut_crystal_seam
+  agent_label: 切下一整片晶脉
+  description: 一次拿两块晶石，比分两次快，但会把风暴压力推高 12 点。
+  entry_conditions:
+  - actor.alive
+  - location.tag.thunderhead
+  - context.day_phase != night or actor.inventory.lantern >= 1
+  nodes:
+  - {type: action, action_id: cut_crystal_seam, parameters: {resource_tag: crystal}}
+  goal_tags: [gathering, supply]
+  drive_tags: [purpose, safety]

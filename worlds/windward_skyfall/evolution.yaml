@@ -21,16 +21,28 @@ stagnation:
 limits:
   max_ready_god_tasks: 1
   continue_during_cooldown: true
+  generated_action_pacing:
+    resident_cooldown: 90m
+    social_milestone_once: true
 director:
-  cadence: 2d
-  window: 7d
-  targets:
-  - verb
-  policy: deterministic
-  behavior_action: dynamic_salvage
-  max_cell_units: 8
-  kickoff: true
+  cadence: 30m
+  window: 6h
+  narrative_direction: true
+  replan_on: [skyfall.next_voyage_started, skyfall.navigation_resumed, skyfall.long_drift]
+  targets: [social, place, verb, rule]
+  policy: llm
+  evidence:
+    social: social_activity
+    rule:
+    - registered: [{event: world.change.rule, key: [expected_state.rule_id], label: summary}]
+      used: [{event: world.rule.followed, key: [rule_id]}, {event: behavior.denied, key: [rule_id]}]
+  followups:
+    social: {after: 30m, for: god, task: crew_social_use}
+    rule: {after: 30m, for: god, task: crew_rule_use}
+  context_residents: 2
+  context_events: [skyfall.dawn_salvage, skyfall.expedition_completed, skyfall.next_voyage_started, skyfall.navigation_resumed, skyfall.long_drift, entity.created, story.beat.activated, story.beat.completed, institution.activated, world.change.rule, definition.registered, supply.shared, supply.reserved]
   context_properties:
+  - dawn_salvage
   - day
   - act
   - storm_pressure
@@ -45,29 +57,52 @@ director:
   - supply_relief_due
 contracts:
   god_structural:
-    tools:
-    - query_history
-    - query_world_index
-    - propose_definition
-    - wait
-    required_definition_type: behavior
-    assign_to:
-    - ke
-    max_proposals: 1
+    tools: [query_history, query_world_index, inspect_definition, propose_entity, propose_definition, propose_world_change, wait]
+    max_proposals: 3
     max_tool_calls: 12
-    required_content:
-      growth_cell: true
-    behavior_constraints:
-      action_id: dynamic_salvage
-      parameters:
-        item: [wood, fiber, stone, salt, clay, glass_sand, copper_ore, coal, herb, mushroom, oil, bone, amber, crystal, relic]
-        amount: [2]
-        location_id: [broken_span]
-      entry_conditions: [actor.alive, location.tag.salvage]
-      cooldown_minutes: 1440
-    purpose: 按 Director 的 plan，在既有群岛里长出一个新的打捞行为：风筝人斥候阿筝可以在断桥群岛打捞现有材料。
-    result: 读取 season_plan、world_growth_ledger 和最近的探索/风暴事件。只提交一个 definition_type=behavior，assign_to ["ke"]，definition.id 写 dyn_salvage_N，agent_label 写“打捞<地点><材料>”，deferred 设为 true，cooldown_minutes 写 1440，entry_conditions 用 ["actor.alive", "location.tag.salvage"]，nodes 用 [{"type":"action","action_id":"dynamic_salvage","parameters":{"item":"<一个现有材料 id>","amount":2,"location_id":"<现有外岛 id>"}}]。item 只能从 wood、fiber、stone、salt、clay、glass_sand、copper_ore、coal、herb、mushroom、oil、bone、amber、crystal、relic 里选；location_id 固定为 broken_span。不要创建新 Action、新岛、新资源、新物品或新 NPC；不要使用 followup_behavior；所有数量变化由 Platform 结算；证据不足时 wait。
+    required_content: {growth_cell: true}
+    purpose: 根据当前存档可核对的事件和居民处境，发展 Director 指出的空缺。
+    result: 根据 Director 的主线目标和玩家两难，为在场人创造一个可用的改变。新增行动应消费真实材料、履行一份当前请求或推进可检查的世界状态。制作要消耗已有材料，交付达到目标后关闭对应入口。引航、宣誓或首次结盟须有阶段条件，结算后为玩家留下另一项选择。查询现有行动和航路，优先让有动机的居民在玩家离开时也能行动。证据不足可等待。
+  crew_social_use:
+    require_resident_assignee: true
+    tools: [query_history, query_world_index, inspect_definition, propose_definition, wait]
+    max_proposals: 2
+    purpose: 让这份存档的居民可以实际使用刚刚形成的社会关系、派系或制度。
+    result: 查看计划登记的对象与当前居民，给能到场的人绑定一个简短可行的行为。关系变化须由登记的发起者作用于登记的对方与关系类型。派系的实际使用可由成员改变该派系状态。把可用行动留给居民自己选择。
+  crew_rule_use:
+    require_resident_assignee: true
+    tools: [query_history, query_world_index, inspect_definition, propose_definition, wait]
+    max_proposals: 2
+    purpose: 查明新规则在本档约束谁、什么条件尚未满足，以及当事人现在能做什么。
+    result: 如果居民只有一条禁令或听见了消息，可以给实际受影响的人一个能改变条件或付出代价的行动。检查现有行动、资源和位置。由居民自主决定是否执行；只有实际的受理、拒绝和结算能证明后果。
 wakes:
+- id: story_after_director
+  'on': director.plan.started
+  for: story
+  every: 3h
+  tools: [query_history, propose_story_beat, wait]
+  external: true
+  purpose: 根据导演的主线目标和本档已结算的事实，为当事人写一段能推进目标的两难或后续。保留玩家的选择。若机制还未出现或事实没有实质变化，等待实际进展。
+- id: story_after_dawn
+  'on': skyfall.dawn_salvage
+  for: story
+  tools: [query_history, propose_story_beat, wait]
+  external: true
+  purpose: 根据实际首航结果、在场者和可用行为，发起这个存档自己的第一段后续。
+- id: story_after_growth
+  'on': [entity.created, institution.activated, world.change.relationship, world.change.rule, definition.registered]
+  for: story
+  every: 30m
+  tools: [query_history, propose_story_beat, wait]
+  external: true
+  purpose: 查明新变化如何影响未完的事情。根据已登记的事实和受众能执行的下一步发展故事，尚未发生的后果保持开放。
+- id: story_after_followup
+  'on': story.beat.completed
+  for: story
+  every: 3h
+  tools: [query_history, propose_story_beat, wait]
+  external: true
+  purpose: 当事人完成了上一章的一项行动。查明实际结果使谁获得了新的选择，有具体变化时写下一章，否则等待。
 - id: story_after_expedition
   'on': [skyfall.expedition_completed]
   for: story
@@ -161,4 +196,11 @@ wakes:
   - propose_story_beat
   - wait
   external: true
-  purpose: 本轮已经收束；只写一个余波或下一轮的钩子，不要改写结局条件。
+  purpose: 本航段已结算或外部条件改变。根据真实损失和工坊、船员及资源的现状，给当事人留下本存档里可行动的后续。
+- id: story_after_next_voyage
+  'on': [skyfall.next_voyage_started, skyfall.navigation_resumed]
+  for: story
+  every: 1h
+  tools: [query_history, propose_story_beat, wait]
+  external: true
+  purpose: 航行继续。依据已经提交的航段结果和当前 Director 主线，写当事人此刻能做的选择。地点、居民、关系与物资以存档为准。

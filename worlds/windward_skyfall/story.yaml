@@ -1,4 +1,11 @@
 emergent_source_event_types:
+- skyfall.dawn_salvage
+- story.beat.completed
+- entity.created
+- institution.activated
+- world.change.relationship
+- world.change.rule
+- definition.registered
 - exploration.completed
 - camp.workshop_built
 - camp.galley_built
@@ -26,6 +33,8 @@ emergent_source_event_types:
 - skyfall.stormborn
 - skyfall.crash
 - skyfall.long_drift
+- skyfall.next_voyage_started
+- skyfall.navigation_resumed
 situation_anchor_window_minutes: 43200
 situation_anchors:
 - id: first_landing
@@ -49,7 +58,7 @@ situation_anchors:
 - id: act_two
   title: 第二幕：上升
   summary: 风脊号开始有方向。你探过两座岛，工坊也立起来了；接下来是铜、雷云和阵营。
-  goal_hint: 把工坊升到二级，做滑翔翼；阵营会决定结局里天空变成什么。
+  goal_hint: 把工坊升到二级，做滑翔翼。与不同阵营合作，会给下一航段带来不同的选择。
   trigger_events:
   - act.two
 - id: storm_hit
@@ -70,147 +79,15 @@ situation_anchors:
   goal_hint: 装好三个核心，然后选择离天、锚定群岛或成为风暴。
   trigger_events:
   - act.three
-beats:
-- id: first_island
-  agent_label: 第一座岛
-  summary: 你把第一座岛画进海图；风脊号的下一站不再靠猜。
-  trigger_events:
-  - exploration.completed
-  audience: []
-  fact: 玩家完成了第一次岛屿探索。
-  goal_hint: 继续探索；每座岛都会解锁新的资源或航线。
-  public_event: story.first_island
-  ttl_minutes: 20160
-  one_shot: true
-- id: first_workshop
-  agent_label: 工坊立起来了
-  summary: 半面墙变成了能用的工坊；铜镐、提灯和风衣进入了行动列表。
-  trigger_events:
-  - camp.workshop_built
-  audience: []
-  fact: 玩家建起了风脊号工坊。
-  goal_hint: 先做一把石镐，再去铜潮谷。
-  public_event: story.first_workshop
-  ttl_minutes: 20160
-  one_shot: true
-- id: first_storm
-  agent_label: 风暴预警
-  summary: 云层开始朝灯岬压过来；你带回来的稀有物资把风暴提前了。
-  trigger_events:
-  - storm.warning
-  audience: []
-  fact: 风暴进入预警阶段。
-  goal_hint: 修船、丢掉一件贵重品，或者加快信标进度。
-  public_event: story.first_storm
-  ttl_minutes: 20160
-  one_shot: true
-- id: storm_hit
-  agent_label: 风暴命中
-  summary: 风暴第一次撞上船体；风脊号的骨架发出不祥的响声。
-  trigger_events:
-  - storm.hit
-  audience: []
-  fact: 风暴第一次击中风脊号。
-  goal_hint: 木材和铜可以补船；丢货可以降压力。
-  public_event: story.storm_hit
-  ttl_minutes: 20160
-  one_shot: true
-- id: first_core
-  agent_label: 第一枚核心
-  summary: 第一枚信标核心装进框架；高环门的方向第一次清晰起来。
-  trigger_events:
-  - beacon.core_installed
-  audience: []
-  fact: 玩家安装了第一枚信标核心。
-  goal_hint: 还需要两枚核心；晶石、遗物和琥珀在雷云工坊和浮鲸墓场。
-  public_event: story.first_core
-  ttl_minutes: 20160
-  one_shot: true
-- id: kite_aided
-  agent_label: 风筝人的桥
-  summary: 你把纤维交给风筝人；断桥群岛多了一段能走的路。
-  trigger_events:
-  - faction.kite_aided
-  audience: []
-  fact: 玩家帮助了风筝人。
-  goal_hint: 风筝人的信任是锚定结局的条件。
-  public_event: story.kite_aided
-  ttl_minutes: 20160
-  one_shot: true
-- id: foundry_traded
-  agent_label: 熔炉派的透镜
-  summary: 你从熔炉派换来一枚透镜；他们开始把你当成能算清账的人。
-  trigger_events:
-  - faction.foundry_traded
-  audience: []
-  fact: 玩家和熔炉派做了交易。
-  goal_hint: 熔炉派相信离开；他们不会为留下的人修桥。
-  public_event: story.foundry_traded
-  ttl_minutes: 20160
-  one_shot: true
-- id: choir_listened
-  agent_label: 风歌者
-  summary: 你听完风歌者的一段歌；风暴暂时安静，船上的灯却更亮了。
-  trigger_events:
-  - faction.choir_listened
-  audience: []
-  fact: 玩家听了风歌者的歌。
-  goal_hint: 风歌者的信任是成为风暴的条件。
-  public_event: story.choir_listened
-  ttl_minutes: 20160
-  one_shot: true
-- id: hull_repaired
-  agent_label: 船体补好了
-  summary: 风脊号的裂缝被木料和铜片补上；它还能再撑一段。
-  trigger_events:
-  - camp.hull_repaired
-  audience: []
-  fact: 玩家修补了风脊号船体。
-  goal_hint: 风暴还会再来；修船和推进信标要抢同一批材料。
-  public_event: story.hull_repaired
-  ttl_minutes: 20160
-  one_shot: true
-- id: launched
-  agent_label: 离天
-  summary: 三个核心对准高环门；风脊号带着你选择的人，离开了裂天群岛。
-  trigger_events:
-  - skyfall.launched
-  audience: []
-  fact: 玩家选择离天。
-  goal_hint: 这一轮结束了；下一轮可以试试锚定群岛或成为风暴。
-  public_event: story.launched
-  ttl_minutes: 20160
-  one_shot: true
-- id: anchored
-  agent_label: 锚定群岛
-  summary: 信标把群岛重新系在一起；天空没有停止坠落，但它第一次停住了。
-  trigger_events:
-  - skyfall.anchored
-  audience: []
-  fact: 玩家选择锚定群岛。
-  goal_hint: 这一轮结束了；下一轮可以试试带走所有人，或把船交给风暴。
-  public_event: story.anchored
-  ttl_minutes: 20160
-  one_shot: true
-- id: stormborn
-  agent_label: 成为风暴
-  summary: 风脊号不再离开，也不再留下；它变成了风暴的一部分。
-  trigger_events:
-  - skyfall.stormborn
-  audience: []
-  fact: 玩家选择成为风暴。
-  goal_hint: 这一轮结束了；下一轮可以试试修好天空，或者带人离开。
-  public_event: story.stormborn
-  ttl_minutes: 20160
-  one_shot: true
+beats: []
 endings:
 - id: escape
-  title: 结局：离天
-  summary: 高环门在你面前打开。风脊号带着你选择的人穿过云海，裂天群岛在身后缩成一小片光。你没有救下天空，但你带走了还能带走的人。
-  goal_hint: 下一轮可以试试留下，看看风筝人能不能把天空重新系起来。
+  title: 阶段完成 · 离天
+  summary: 高环门打开了。风脊号驶入较平稳的气流，船员开始清点剩余补给和可以落脚的地方。
+  goal_hint: 跨过高环门后，先找能卸下补给的泊点，再决定和谁打交道。
   condition: world.ending_trigger == 1
   trigger_event: skyfall.launched
-  kind: ending
+  kind: stage
   stats: &id001
   - property: hull_integrity
     label: 船体
@@ -233,34 +110,34 @@ endings:
   - property: choir_rep
     label: 风歌者声望
 - id: anchor
-  title: 结局：锚定群岛
+  title: 阶段完成 · 锚定群岛
   summary: 信标把群岛的锚点一个个对齐。天空没有停止坠落，但它第一次停住了。风筝人在断桥上唱了一整夜；老陶把最后一锅汤分给了所有人。
-  goal_hint: 下一轮可以试试带更多人离开，或者听听风歌者想说什么。
+  goal_hint: 决定谁来守锚，以及外来的船要付出什么才能使用这条新航线。
   condition: world.ending_trigger == 2
   trigger_event: skyfall.anchored
-  kind: ending
+  kind: stage
   stats: *id001
 - id: stormborn
-  title: 结局：风暴之子
-  summary: 你听完风歌者的最后一段，把风脊号交给天空。船体散成云，船员的名字留在风里。从此裂天群岛的风暴里，有一盏会认路的灯。
-  goal_hint: 下一轮可以试试修好天空，或者带人离开。
+  title: 阶段完成 · 风暴之子
+  summary: 你听完风歌者的最后一段，跟着风歌者进入风眼。风暴里的灯还能辨认方向，船员要试出一条能载货、能往返的路。
+  goal_hint: 趁风眼平静整备，决定要先为自己画出路，还是带其他人穿过来。
   condition: world.ending_trigger == 3
   trigger_event: skyfall.stormborn
-  kind: ending
+  kind: stage
   stats: *id001
 - id: crash
-  title: 结局：坠落
-  summary: 船体撑不住了。云海从裂缝里涌进来，风脊号一边下坠一边散成木片。最后留在你手里的，是一块还温热的工坊铭牌。
-  goal_hint: 下一轮先修船，再贪那件稀有物资。
+  title: 阶段完成 · 坠落
+  summary: 船体撑不住了。风脊号贴着下层岩架迫降。船员拾回板材，工坊铭牌还挂在梁上，部分补给滚进了云海。
+  goal_hint: 清点补给、修船，并向附近的人寻找帮忙的条件。
   condition: world.ending_trigger == 4
   trigger_event: skyfall.crash
-  kind: ending
+  kind: stage
   stats: *id001
 - id: long_drift
-  title: 结局：云海合拢
+  title: 阶段完成 · 云海合拢
   summary: 第三十天，云海合拢。风脊号还在灯岬，工坊还在，船员还在；只是高环门已经看不见了。天空替你做了决定。
-  goal_hint: 下一轮早一点立信标；或者试试锚定结局。
+  goal_hint: 寻找云层上方的航线窗口，继续准备信标。
   condition: world.ending_trigger == 5
   trigger_event: skyfall.long_drift
-  kind: ending
+  kind: stage
   stats: *id001

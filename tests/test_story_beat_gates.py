@@ -155,6 +155,22 @@ def test_research_result_cannot_be_credited_to_another_source(tmp_path: Path) ->
         platform.close()
 
 
+def test_story_ignores_the_same_chapter_after_a_second_wake(tmp_path: Path) -> None:
+    platform = _town(tmp_path, "duplicate-chapter-on-new-source")
+    try:
+        first_source = _channel_event(platform, 3, 2, "west-water")
+        second_source = _channel_event(platform, 4, 2, "east-water")
+        first = platform.submit_story_beat("story", _channel_beat(2, "Northern channels"), source_event_ids=[first_source])
+        assert first["status"] == "accepted"
+        repeated = platform.submit_story_beat("story", _channel_beat(
+            2, "Another report on the channels", fact="Two northern channels are dry.",
+        ), source_event_ids=[second_source])
+        assert repeated["status"] == "wait" and "materially identical" in repeated["reason"]
+        assert len(_story_state(platform)["emergent_beats"]) == 1
+    finally:
+        platform.close()
+
+
 def test_emergent_beat_commits_once_per_validated_result(tmp_path: Path) -> None:
     platform = _town(tmp_path, "story-commit-once")
     try:
@@ -172,7 +188,10 @@ def test_emergent_beat_commits_once_per_validated_result(tmp_path: Path) -> None
         assert "unlock_choices" not in emergent
         keys = {item["fact_key"] for item in platform.store.repositories.memory.list_knowledge_facts("luo_shan", limit=100)}
         assert f"story:{beat_id}" in keys
-        assert [item["beat_id"] for item in _activations(platform)] == [beat_id]
+        activation, = _activations(platform)
+        assert (activation["beat_id"], activation["source_event_id"], activation["source_event_type"]) == (
+            beat_id, first_source, "exploration.completed",
+        )
         assert _intents(platform) == [("propose_story_beat", "accepted")]
 
         repeated = platform.submit_story_beat("story", _channel_beat(3, "Channel count again"), source_event_ids=[first_source])

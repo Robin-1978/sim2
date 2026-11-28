@@ -4576,6 +4576,8 @@ def test_story_beat_completes_after_audience_followup(tmp_path: Path):
             "audience": ["韩秋"],
         }, source_event_ids=[source_event_id])["status"] == "accepted"
         assert platform.store.repositories.metadata.get("story_state")["boundary_stone_research"]["status"] == "active"
+        hint = platform.store.repositories.metadata.get("story_state")["boundary_stone_research"]["goal_hint"]
+        assert hint in platform.view.build_decision_view("han_qiu")["story_goals"]
         started = platform.submit_behavior(BehaviorIntent(
             "han_qiu", "behavior:secure_north_watch", {}, {}, "Follow the story beat.", 0.9, "beat-followup-1",
         ))
@@ -4584,7 +4586,14 @@ def test_story_beat_completes_after_audience_followup(tmp_path: Path):
         state = platform.store.repositories.metadata.get("story_state")
         assert state["boundary_stone_research"]["status"] == "completed"
         assert state["boundary_stone_research"]["completed_by_behavior"] == "secure_north_watch"
-        assert any(item["event_type"] == "story.beat.completed" for item in platform.store.repositories.events.recent_events(limit=10))
+        closed, = platform.store.repositories.events.recent_events_by_types(["story.beat.completed"], limit=1)
+        outcome, = platform.store.repositories.events.events_by_ids([closed["behavior_event_id"]])
+        assert (outcome["event_type"], outcome["actor_id"], outcome["behavior_id"], outcome["result"]) == (
+            "behavior.completed", "han_qiu", closed["behavior_id"], closed["result"],
+        )
+        source = platform.view.build_decision_view("story", role="story", source_event_id=closed["event_id"])["validated_source"]
+        assert source["closed_thread"]["chapter"] and source["closed_thread"]["completed_choice"] == closed["behavior_label"]
+        assert state["boundary_stone_research"]["goal_hint"] not in platform.view.build_decision_view("han_qiu")["story_goals"]
     finally:
         platform.close()
 

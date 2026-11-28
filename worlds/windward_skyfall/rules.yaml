@@ -6,6 +6,7 @@ incapacitation:
     after_minutes: 720
     vital_fraction: 0.25
 capacity_attribute: stamina
+fallback_behavior_ids: [drink_at_camp, eat_at_camp, harvest_camp_herbs, dress_wounds]
 travel:
   player_route_mode: authored
 location_tag_groups:
@@ -86,6 +87,7 @@ item_labels:
   stew: 蘑菇炖菜
   salve: 药膏
   stone_axe: 石斧
+  stone_knife: 石刀
   stone_pick: 石镐
   rope: 绳索
   copper_pick: 铜镐
@@ -114,8 +116,8 @@ item_uses:
   coal:
   - 熔炼铜和玻璃
   herb:
-  - 药膏和炖菜
-  - 治疗船员
+  - 直接包扎伤口，恢复 15 点健康
+  - 在药棚制作药膏，也能做炖菜
   mushroom:
   - 蘑菇炖菜
   oil:
@@ -145,13 +147,17 @@ item_uses:
   salve:
   - 恢复体力
   stone_axe:
-  - 提高木材产量
+  - 批量伐木，加快收集木材和纤维
+  stone_knife:
+  - 加快采集纤维、浆果、药草和蘑菇
   stone_pick:
-  - 采石、采铜
+  - 采石、采铜、采煤
+  - 加快采集石块、陶土、玻璃砂和盐
   rope:
   - 前往雨背崖
   copper_pick:
-  - 采晶石
+  - 加快采石、采铜、采煤和盐滩采集
+  - 采晶石、拆鲸骨
   lantern:
   - 进入浮鲸墓场
   storm_cloak:
@@ -159,7 +165,8 @@ item_uses:
   glider:
   - 前往雷云工坊和断桥群岛
   crystal_saw:
-  - 拆解遗物
+  - 拆解遗物，加快采晶石、取琥珀和拆鲸骨
+  - 可成批切晶石，省时间但会加剧风暴
   beacon_core:
   - 安装到信标框架
 world_property_labels:
@@ -176,11 +183,10 @@ world_property_labels:
   day:
     label: 第几天
     unit: amount
-    max: 30
     group: 天空
     group_order: 1
     order: 1
-    prompt: 云海合拢前的第几天；第 30 天仍未选择会触发保底结局。
+    prompt: 航行至今的天数。第 30 天到来的云涌会改变处境。
   act:
     label: 幕次
     unit: amount
@@ -235,7 +241,7 @@ world_property_labels:
     group: 营地
     group_order: 3
     order: 2
-    prompt: 厨房让船员做饭，也让你带走更多口粮。
+    prompt: 花两份浆果和一份盐做一锅热饭，为公共口粮箱补六份。
   garden_level:
     label: 花园
     unit: amount
@@ -243,7 +249,7 @@ world_property_labels:
     group: 营地
     group_order: 3
     order: 3
-    prompt: 花园每天补口粮；二级花园是锚定结局的条件。
+    prompt: 花园每十二小时出一批口粮和药草。二级花园加倍生产，并可为群岛锚线提供持续补给。
   infirmary_level:
     label: 药棚
     unit: amount
@@ -260,7 +266,7 @@ world_property_labels:
     group_order: 3
     order: 5
     alert: true
-    prompt: 士气来自热饭、花园、观星和阵营互动；太低会让结局更冷。
+    prompt: 热饭、花园、观星和互助都会影响船上士气。
   beacon_frame:
     label: 信标框架
     unit: amount
@@ -293,7 +299,7 @@ world_property_labels:
     group: 探索
     group_order: 5
     order: 2
-    prompt: 船员决定结局里谁和你一起走。
+    prompt: 风脊号名册上的船员。
   ration:
     label: 营地口粮
     unit: amount
@@ -305,10 +311,25 @@ world_property_labels:
   water:
     label: 营地蓄水
     unit: amount
-    max: 24
+    max: 36
     group: 营地
     group_order: 3
     order: 7
+    prompt: 船上的接露槽每六小时收三份淡水，造好集水帆后翻倍。
+  cistern_level:
+    label: 集水帆
+    unit: amount
+    max: 1
+    group: 营地
+    group_order: 3
+    order: 8
+  camp_herbs:
+    label: 药园待采药草
+    unit: amount
+    max: 8
+    group: 营地
+    group_order: 3
+    order: 9
     hidden: false
   kite_rep:
     label: 风筝人声望
@@ -317,7 +338,7 @@ world_property_labels:
     group: 阵营
     group_order: 6
     order: 1
-    prompt: 40% 可以走锚定结局。
+    prompt: 达到 40% 可请风筝人一起守锚。
   foundry_rep:
     label: 熔炉派声望
     unit: percent
@@ -333,11 +354,21 @@ world_property_labels:
     group: 阵营
     group_order: 6
     order: 3
-    prompt: 40% 可以走风暴之子结局。
+    prompt: 达到 40% 可请风歌者带路进入风眼。
   ending_trigger:
-    label: 结局
+    label: 裂天阶段结果
     unit: amount
     max: 5
+    hidden: true
+  voyage_phase:
+    label: 航行阶段
+    unit: amount
+    group: 探索
+    group_order: 5
+    order: 0
+    prompt: 第一阶段面对裂天群岛危机。阶段结算后，船员继续在同一世界生活。
+  long_drift_seen:
+    label: 已遇长漂云涌
     hidden: true
   storm_warning_seen:
     label: 风暴预警
@@ -363,6 +394,7 @@ resource_property_projections:
   emergency_copper_cache: emergency_stock
   ration: ration
   water: water
+  camp_herbs: camp_herbs
 resource_caps: {}
 resource_regeneration:
 - resource_id: wood
@@ -437,10 +469,6 @@ resource_regeneration:
   every_minutes: 720
   amount: 1
   cap: 16
-- resource_id: water
-  every_minutes: 360
-  amount: 2
-  cap: 24
 resource_safety:
 - resource_id: ration
   minimum_reserve: 2
@@ -521,7 +549,7 @@ minute_effects:
 - id: emergency_plates_used
   scope: world
   every_minutes: 1
-  condition: world.supply_spare_plates > 0 and world.hull_integrity < 0.9 and world.ending_trigger == 0
+  condition: world.supply_spare_plates > 0 and world.hull_integrity < 0.9
   effects:
   - {type: world_property_set, property: supply_spare_plates, value: 0}
   - {type: world_property_delta, property: hull_integrity, delta: 0.12, maximum: 1}
@@ -647,7 +675,7 @@ minute_effects:
 - id: storm_daily
   scope: world
   every_minutes: 1
-  condition: context.minute_of_day == 0 and world.ending_trigger == 0
+  condition: context.minute_of_day == 0
   effects:
   - type: world_property_delta
     property: storm_pressure
@@ -656,7 +684,7 @@ minute_effects:
 - id: storm_stage_1
   scope: world
   every_minutes: 1
-  condition: world.storm_pressure >= 35 and world.storm_stage < 1 and world.ending_trigger == 0
+  condition: world.storm_pressure >= 35 and world.storm_stage < 1
   effects:
   - type: world_property_delta
     property: storm_stage
@@ -707,34 +735,109 @@ minute_effects:
 - id: long_drift
   scope: world
   every_minutes: 1
-  condition: world.day >= 30 and world.ending_trigger == 0
+  condition: world.day >= 30 and world.ending_trigger == 0 and world.long_drift_seen == 0
   effects:
-  - type: world_property_set
-    property: ending_trigger
-    value: 5
+  - {type: world_property_set, property: long_drift_seen, value: 1}
+  - {type: world_property_delta, property: storm_pressure, delta: 8, maximum: 100}
   event_type: skyfall.long_drift
-  event_summary: 第三十天，云海合拢；天空替你做了决定。
-- id: camp_supply
+  event_summary: 第三十天，云涌盖过低处的航线。船员重新画图，准备从高处寻找窗口。
+- id: voyage_after_departure
+  scope: world
+  every_minutes: 1
+  condition: world.voyage_phase == 1 and world.ending_trigger == 1
+  effects:
+  - {type: world_property_set, property: voyage_phase, value: 2}
+  - {type: world_property_delta, property: storm_pressure, delta: -35, minimum: 0}
+  event_type: skyfall.next_voyage_started
+  event_data: {outcome: departure}
+  event_summary: 风脊号穿过高环门后跑进一段较平稳的气流。船员要决定先在哪里卸补给、联系谁。
+- id: voyage_after_anchoring
+  scope: world
+  every_minutes: 1
+  condition: world.voyage_phase == 1 and world.ending_trigger == 2
+  effects:
+  - {type: world_property_set, property: voyage_phase, value: 2}
+  - {type: world_property_delta, property: storm_pressure, delta: -20, minimum: 0}
+  event_type: skyfall.next_voyage_started
+  event_data: {outcome: anchoring}
+  event_summary: 锚线暂时撑住群岛。靠近断桥的船员开始商量谁来守锚，谁能使用稳定下来的航线。
+- id: voyage_through_storm
+  scope: world
+  every_minutes: 1
+  condition: world.voyage_phase == 1 and world.ending_trigger == 3
+  effects:
+  - {type: world_property_set, property: voyage_phase, value: 2}
+  - {type: world_property_delta, property: storm_pressure, delta: -45, minimum: 0}
+  event_type: skyfall.next_voyage_started
+  event_data: {outcome: storm_eye}
+  event_summary: 风歌者领风脊号切进风眼。这里暂时平静，但船员还需要找到能反复通行的路。
+- id: voyage_after_crash
+  scope: world
+  every_minutes: 1
+  condition: world.voyage_phase == 1 and world.ending_trigger == 4
+  effects:
+  - {type: world_property_set, property: voyage_phase, value: 2}
+  - {type: world_property_delta, property: hull_integrity, delta: 0, minimum: 0.25}
+  - {type: world_property_delta, property: storm_pressure, delta: -30, minimum: 0}
+  - {type: world_resource_delta, resource_id: ration, delta: -4, minimum: 0}
+  - {type: world_resource_delta, resource_id: water, delta: -4, minimum: 0}
+  event_type: skyfall.next_voyage_started
+  event_data: {outcome: forced_landing}
+  event_summary: 船员迫降后把散架的船体固定在岩架上。部分补给落进云海，临时固定的船体需要尽快修补。
+- id: voyage_after_old_deadline
+  scope: world
+  every_minutes: 1
+  condition: world.voyage_phase == 1 and world.ending_trigger == 5
+  effects:
+  - {type: world_property_set, property: ending_trigger, value: 0}
+  - {type: world_property_set, property: long_drift_seen, value: 1}
+  event_type: skyfall.navigation_resumed
+  event_summary: 高处的云层露出缺口，船员重新开始寻找穿过高环门的机会。
+- id: voyage_later_forced_landing
+  scope: world
+  every_minutes: 1
+  condition: world.voyage_phase >= 2 and world.hull_integrity <= 0
+  effects:
+  - {type: world_property_delta, property: voyage_phase, delta: 1}
+  - {type: world_property_set, property: hull_integrity, value: 0.25}
+  - {type: world_property_delta, property: storm_pressure, delta: -30, minimum: 0}
+  - {type: world_resource_delta, resource_id: ration, delta: -4, minimum: 0}
+  - {type: world_resource_delta, resource_id: water, delta: -4, minimum: 0}
+  event_type: skyfall.next_voyage_started
+  event_data: {outcome: forced_landing}
+  event_summary: 风脊号再度贴着岩架迫降。船员开始清点掉落的补给和可以修回的船板。
+- id: garden_harvest
   scope: world
   every_minutes: 720
-  condition: world.galley_level >= 1 or world.garden_level >= 1
+  condition: world.garden_level >= 1
   effects:
-  - type: world_resource_delta
-    resource_id: ration
-    delta: 2
-    maximum: 16
-- id: camp_water
+  - {type: world_resource_delta, resource_id: ration, delta: 2, maximum: 16}
+  - {type: world_resource_delta, resource_id: camp_herbs, delta: 2, maximum: 8}
+- id: garden_harvest_expanded
   scope: world
   every_minutes: 720
+  condition: world.garden_level >= 2
   effects:
-  - type: world_resource_delta
-    resource_id: water
-    delta: 2
-    maximum: 24
+  - {type: world_resource_delta, resource_id: ration, delta: 2, maximum: 16}
+  - {type: world_resource_delta, resource_id: camp_herbs, delta: 2, maximum: 8}
+- id: catch_camp_dew
+  scope: world
+  every_minutes: 360
+  condition: world.cistern_level < 1 and world.water < 24
+  effect: {type: world_resource_delta, resource_id: water, delta: 3, maximum: 24}
+  event_type: camp.water_collected
+  event_summary: 接露槽把帆布上的露水收进了淡水箱。
+- id: catch_camp_mist
+  scope: world
+  every_minutes: 360
+  condition: world.cistern_level >= 1 and world.water < 36
+  effect: {type: world_resource_delta, resource_id: water, delta: 6, maximum: 36}
+  event_type: camp.water_collected
+  event_summary: 集水帆拦住穿过甲板的云雾，淡水顺着导流槽流进水箱。
 - id: storm_stage_2
   scope: world
   every_minutes: 1
-  condition: world.storm_pressure >= 65 and world.storm_stage < 2 and world.ending_trigger == 0
+  condition: world.storm_pressure >= 65 and world.storm_stage < 2
   effect:
     type: world_property_set
     property: storm_stage
@@ -742,7 +845,7 @@ minute_effects:
 - id: storm_stage_3
   scope: world
   every_minutes: 1
-  condition: world.storm_pressure >= 90 and world.storm_stage < 3 and world.ending_trigger == 0
+  condition: world.storm_pressure >= 90 and world.storm_stage < 3
   effect:
     type: world_property_set
     property: storm_stage
@@ -750,7 +853,7 @@ minute_effects:
 - id: storm_eased_to_0
   scope: world
   every_minutes: 1
-  condition: world.storm_pressure < 35 and world.storm_stage > 0 and world.ending_trigger == 0
+  condition: world.storm_pressure < 35 and world.storm_stage > 0
   effect:
     type: world_property_set
     property: storm_stage
@@ -760,7 +863,7 @@ minute_effects:
 - id: storm_eased_to_1
   scope: world
   every_minutes: 1
-  condition: world.storm_pressure >= 35 and world.storm_pressure < 65 and world.storm_stage > 1 and world.ending_trigger == 0
+  condition: world.storm_pressure >= 35 and world.storm_pressure < 65 and world.storm_stage > 1
   effect:
     type: world_property_set
     property: storm_stage
@@ -770,7 +873,7 @@ minute_effects:
 - id: storm_eased_to_2
   scope: world
   every_minutes: 1
-  condition: world.storm_pressure >= 65 and world.storm_pressure < 90 and world.storm_stage > 2 and world.ending_trigger == 0
+  condition: world.storm_pressure >= 65 and world.storm_pressure < 90 and world.storm_stage > 2
   effect:
     type: world_property_set
     property: storm_stage
@@ -780,7 +883,7 @@ minute_effects:
 - id: storm_first_hit_hull0
   scope: world
   every_minutes: 1
-  condition: world.storm_stage >= 2 and world.storm_hit_seen == 0 and world.ending_trigger == 0 and world.hull_level == 0
+  condition: world.storm_stage >= 2 and world.storm_hit_seen == 0 and world.hull_level == 0
   effects:
   - type: world_property_delta
     property: hull_integrity
@@ -796,7 +899,7 @@ minute_effects:
 - id: storm_first_critical_hull0
   scope: world
   every_minutes: 1
-  condition: world.storm_stage >= 3 and world.storm_critical_seen == 0 and world.ending_trigger == 0 and world.hull_level == 0
+  condition: world.storm_stage >= 3 and world.storm_critical_seen == 0 and world.hull_level == 0
   effects:
   - type: world_property_delta
     property: hull_integrity
@@ -812,7 +915,7 @@ minute_effects:
 - id: storm_damage_2_hull0
   scope: world
   every_minutes: 360
-  condition: world.storm_stage >= 2 and world.hull_integrity > 0 and world.ending_trigger == 0 and world.hull_level == 0
+  condition: world.storm_stage >= 2 and world.hull_integrity > 0 and world.hull_level == 0
   effects:
   - type: world_property_delta
     property: hull_integrity
@@ -822,7 +925,7 @@ minute_effects:
 - id: storm_damage_3_hull0
   scope: world
   every_minutes: 360
-  condition: world.storm_stage >= 3 and world.hull_integrity > 0 and world.ending_trigger == 0 and world.hull_level == 0
+  condition: world.storm_stage >= 3 and world.hull_integrity > 0 and world.hull_level == 0
   effects:
   - type: world_property_delta
     property: hull_integrity
@@ -832,7 +935,7 @@ minute_effects:
 - id: storm_first_hit_hull1
   scope: world
   every_minutes: 1
-  condition: world.storm_stage >= 2 and world.storm_hit_seen == 0 and world.ending_trigger == 0 and world.hull_level == 1
+  condition: world.storm_stage >= 2 and world.storm_hit_seen == 0 and world.hull_level == 1
   effects:
   - type: world_property_delta
     property: hull_integrity
@@ -848,7 +951,7 @@ minute_effects:
 - id: storm_first_critical_hull1
   scope: world
   every_minutes: 1
-  condition: world.storm_stage >= 3 and world.storm_critical_seen == 0 and world.ending_trigger == 0 and world.hull_level == 1
+  condition: world.storm_stage >= 3 and world.storm_critical_seen == 0 and world.hull_level == 1
   effects:
   - type: world_property_delta
     property: hull_integrity
@@ -864,7 +967,7 @@ minute_effects:
 - id: storm_damage_2_hull1
   scope: world
   every_minutes: 360
-  condition: world.storm_stage >= 2 and world.hull_integrity > 0 and world.ending_trigger == 0 and world.hull_level == 1
+  condition: world.storm_stage >= 2 and world.hull_integrity > 0 and world.hull_level == 1
   effects:
   - type: world_property_delta
     property: hull_integrity
@@ -874,7 +977,7 @@ minute_effects:
 - id: storm_damage_3_hull1
   scope: world
   every_minutes: 360
-  condition: world.storm_stage >= 3 and world.hull_integrity > 0 and world.ending_trigger == 0 and world.hull_level == 1
+  condition: world.storm_stage >= 3 and world.hull_integrity > 0 and world.hull_level == 1
   effects:
   - type: world_property_delta
     property: hull_integrity
@@ -884,7 +987,7 @@ minute_effects:
 - id: storm_first_hit_hull2
   scope: world
   every_minutes: 1
-  condition: world.storm_stage >= 2 and world.storm_hit_seen == 0 and world.ending_trigger == 0 and world.hull_level >= 2
+  condition: world.storm_stage >= 2 and world.storm_hit_seen == 0 and world.hull_level >= 2
   effects:
   - type: world_property_delta
     property: hull_integrity
@@ -900,7 +1003,7 @@ minute_effects:
 - id: storm_first_critical_hull2
   scope: world
   every_minutes: 1
-  condition: world.storm_stage >= 3 and world.storm_critical_seen == 0 and world.ending_trigger == 0 and world.hull_level >= 2
+  condition: world.storm_stage >= 3 and world.storm_critical_seen == 0 and world.hull_level >= 2
   effects:
   - type: world_property_delta
     property: hull_integrity
@@ -916,7 +1019,7 @@ minute_effects:
 - id: storm_damage_2_hull2
   scope: world
   every_minutes: 360
-  condition: world.storm_stage >= 2 and world.hull_integrity > 0 and world.ending_trigger == 0 and world.hull_level >= 2
+  condition: world.storm_stage >= 2 and world.hull_integrity > 0 and world.hull_level >= 2
   effects:
   - type: world_property_delta
     property: hull_integrity
@@ -926,7 +1029,7 @@ minute_effects:
 - id: storm_damage_3_hull2
   scope: world
   every_minutes: 360
-  condition: world.storm_stage >= 3 and world.hull_integrity > 0 and world.ending_trigger == 0 and world.hull_level >= 2
+  condition: world.storm_stage >= 3 and world.hull_integrity > 0 and world.hull_level >= 2
   effects:
   - type: world_property_delta
     property: hull_integrity
@@ -957,9 +1060,9 @@ onboarding:
   done_when: world.workshop_level >= 1
 - id: first_tool
   title: 做一把石镐
-  body: 石镐能让你在铜潮谷敲下铜矿；铜镐又会打开浮鲸墓场和雷云工坊。
+  body: 石镐能在铜潮谷采铜和煤。铜镐采矿更快，也能采晶石。
   action_ref: behavior:craft_stone_pick
-  done_when: actor.inventory.stone_pick >= 1
+  done_when: actor.inventory.stone_pick >= 1 or actor.inventory.copper_pick >= 1
 - id: chart_three
   title: 把航线画到第三座岛
   body: 探索三座岛，Director 和 Story 才会开始把你的选择长成新的内容。
@@ -1073,7 +1176,7 @@ progression:
   priority: 0.99
   audience:
   - player
-  visible_when: world.beacon_cores >= 3
+  visible_when: world.ending_trigger == 0 and world.beacon_cores >= 3
   target_behaviors:
   - launch_escape
   support_behaviors:
@@ -1083,11 +1186,11 @@ progression:
     count: 1
 - id: anchor_the_sky
   label: 锚定群岛
-  summary: 二级花园和风筝人的信任，让天空重新系在一起。
+  summary: 两枚核心、四份锚索纤维、二级花园和风筝人的信任，能让群岛重新系在一起。
   priority: 0.98
   audience:
   - player
-  visible_when: world.beacon_cores >= 3 and world.kite_rep >= 0.2
+  visible_when: world.ending_trigger == 0 and world.beacon_cores >= 2 and world.kite_rep >= 0.2
   target_behaviors:
   - anchor_islands
   - aid_kite
@@ -1104,7 +1207,7 @@ progression:
   priority: 0.96
   audience:
   - player
-  visible_when: world.storm_pressure >= 70 and world.choir_rep >= 0.2
+  visible_when: world.ending_trigger == 0 and world.storm_pressure >= 70 and world.choir_rep >= 0.2
   target_behaviors:
   - become_storm
   - listen_choir

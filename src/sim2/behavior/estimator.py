@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Callable
 
+from ..world.action_tools import best_time_tool
 from .plan import wait_minutes
 
 
@@ -16,6 +17,7 @@ class BehaviorDurationEstimator:
         route_distance: Callable[[str | None, str | None], int],
         *,
         capabilities: dict[str, Any] | None = None,
+        inventory: dict[str, Any] | None = None,
         capability_modifiers: dict[str, Any] | None = None,
         travel_speed: Callable[[dict[str, Any]], float] | None = None,
         phase_duration: Callable[[str, int], int | None] | None = None,
@@ -25,6 +27,7 @@ class BehaviorDurationEstimator:
         self.recipes = recipes
         self.route_distance = route_distance
         self.capabilities = capabilities or {}
+        self.inventory = inventory or {}
         self.capability_modifiers = capability_modifiers or {}
         self.travel_speed = travel_speed
         self.phase_duration = phase_duration
@@ -61,7 +64,7 @@ class BehaviorDurationEstimator:
                 total += self._nodes_minutes(node.get("children", []) or [], parameters, origin, stack, no_op_minutes, elapsed_minutes + total)
         return total
 
-    def _action_minutes(self, action: dict[str, Any], parameters: dict[str, Any], origin: str | None, no_op_minutes: int = 1, *, elapsed_minutes: int = 0) -> int:
+    def _action_minutes(self, action: dict[str, Any], parameters: dict[str, Any], origin: str | None, no_op_minutes: int = 1, *, elapsed_minutes: int = 0, use_tools: bool = True) -> int:
         duration = action.get("duration") or {}
         if duration.get("mode") == "until_day_phase" and self.phase_duration is not None:
             minutes = self.phase_duration(str(duration.get("phase") or ""), elapsed_minutes)
@@ -100,6 +103,9 @@ class BehaviorDurationEstimator:
             if isinstance(curve.get("max"), (int, float)):
                 current = min(float(curve["max"]), current)
             multiplier *= max(0.05, current)
+        tool = best_time_tool(action, parameters, self.inventory) if use_tools else None
+        if tool:
+            multiplier *= tool[1]
         return max(1, int(round(base * multiplier)))
 
     @staticmethod

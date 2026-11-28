@@ -269,6 +269,10 @@ class DefinitionRuntimeMixin:
         audience = self._resolve_assignees(required, "assign_to", errors)
         supplied = {agent_id for agent_id, _ in [*plan.assignees, *plan.followup_agents]}
         expected = {agent_id for agent_id, _ in audience}
+        if not plan.errors and contract.get("require_resident_assignee") and plan.definition_type in {"action", "behavior"}:
+            agents = (self.store.repositories.entities.get_agent(agent_id) for agent_id in supplied)
+            if not any(agent.get("role") != "player" and agent.get("controller") != "manual" for agent in agents):
+                return {"message": "Include at least one autonomous resident in assign_to. The player may also participate."}
         constraints = contract.get("behavior_constraints")
         if errors or (expected - supplied) or (constraints and supplied != expected):
             return {"message": "Assign the behavior to the configured audience.", "required_assign_to": [name for _, name in audience] or required}
@@ -806,6 +810,6 @@ class DefinitionRuntimeMixin:
         attributes = self.store.repositories.metadata.get("attributes", []) or []
         rules = self.store.repositories.metadata.get("rules", {}) or {}
         self._context.set_dependency("attribute_schema", AttributeSchema(attributes, rules))
-        self._context.set_dependency("effects", EffectPipeline(attributes))
+        self._context.set_dependency("effects", EffectPipeline(attributes, resolve_location=self.targets.location_id))
         self._context.set_dependency("conditions", ConditionEngine(rules))
         self._context.set_dependency("rule_compiler", self._context.services["api"].new_rule_compiler())

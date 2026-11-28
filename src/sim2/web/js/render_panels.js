@@ -169,13 +169,19 @@ export function closeCharacter() {
   }
 
 
-export function openPlayerSheet() {
+let playerSheetOpener = null;
+
+export function openPlayerSheet(event) {
+    playerSheetOpener = event.currentTarget;
     $("player-drawer").classList.remove("hidden");
+    $("player-sheet-close").focus();
   }
 
 
 export function closePlayerSheet() {
     $("player-drawer").classList.add("hidden");
+    playerSheetOpener?.focus({ preventScroll: true });
+    playerSheetOpener = null;
   }
 
 
@@ -289,6 +295,7 @@ export const SKIP_EVENTS = new Set([
     "capability.evidence",
     "memory.experience_recorded",
     "definition.registered",
+    "director.plan.started",
     "behavior.registered",
     "evolution.task_due",
   ]);

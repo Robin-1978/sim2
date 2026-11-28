@@ -1,4 +1,4 @@
-import { $, clamp, el, formatClock, humanizeKey, itemLabel, state } from "./core.js";
+import { $, clamp, el, formatClock, humanizeKey, itemLabel, state, uiConfig } from "./core.js";
 
 
 export function renderClock() {
@@ -23,7 +23,7 @@ export function renderCharacter() {
     const name = player.name || state.playerName || state.playerId || "?";
     $("player-name").textContent = name;
     $("player-portrait").textContent = String(name).slice(0, 1);
-    const role = player.role && player.role !== "player" ? player.role : "玩家";
+    const role = player.origin_name || (player.role && player.role !== "player" ? player.role : "玩家");
     const location = player.location || view.location?.name || "未知地点";
     $("player-role").textContent = role;
     $("player-location").textContent = location;
@@ -43,6 +43,23 @@ export function renderCharacter() {
     }
 
     const attributes = Array.isArray(player.attributes) ? player.attributes : [];
+    $("summary-name").textContent = name;
+    $("summary-avatar").textContent = Array.from(name)[0];
+    $("summary-origin").textContent = `${role} · ${location}`;
+    $("summary-goal").textContent = player.goal || "";
+    const preferred = uiConfig().player_summary_attributes;
+    const stats = Array.isArray(preferred)
+      ? preferred.map(id => attributes.find(attr => attr.id === id)).filter(Boolean)
+      : attributes.slice(0, 3);
+    const summaryStats = $("summary-stats");
+    summaryStats.replaceChildren();
+    for (const attr of stats) {
+      const value = Number(attr.value);
+      const stat = el("div", attr.cost_mode === "increase" ? "" : barTone(attr.id, value));
+      stat.append(el("dt", "", attr.label || humanizeKey(attr.id)),
+        el("dd", "", `${Math.round(value * 10) / 10}${attr.unit || ""}`));
+      summaryStats.append(stat);
+    }
     const needRoot = $("need-bars");
     const vitalRoot = $("vital-bars");
     needRoot.replaceChildren();
@@ -66,6 +83,7 @@ export function renderCharacter() {
     }
     if (!needRoot.children.length) needRoot.append(el("p", "hint", "没有可显示的需求。"));
     const inventoryCount = Object.keys(view.inventory || {}).filter((key) => Number(view.inventory[key]) > 0).length;
+    $("scene-player-bag").textContent = `行囊 · ${inventoryCount} 种`;
     const capabilityCount = Array.isArray(view.capabilities) ? view.capabilities.length : 0;
     $("inventory-count").textContent = `${inventoryCount} 种`;
     $("capability-count").textContent = `${capabilityCount} 项`;

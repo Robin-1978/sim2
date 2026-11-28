@@ -765,9 +765,9 @@ class SimulationRunner:
 
         A budget-exhausted structural session is retried at the Director
         cadence, not after a full day, because the season plan may expire much
-        sooner.  The delay is also capped at half the remaining plan window so
-        one retry still fits before expiry.  Other rejections keep the existing
-        one-hour exponential backoff.
+        sooner. Allow an initial retry inside a short remaining window. After
+        repeated budget failures, give the Director its configured interval to
+        review the plan before spending another session on it.
         """
 
         failed_check = str(result.get("failed_check") or "")
@@ -786,7 +786,8 @@ class SimulationRunner:
             minute = int(self.platform.store.repositories.metadata.get("world_minute", 0))
             remaining = int(plan.get("expires_minute", 0) or 0) - minute
             if remaining > 0:
-                delay = min(delay, max(1, remaining // 2))
+                retry_floor = base_delay if failed_check == "budget_exhausted" and retry_count else 1
+                delay = min(delay, max(retry_floor, remaining // 2))
         return delay
 
     @staticmethod

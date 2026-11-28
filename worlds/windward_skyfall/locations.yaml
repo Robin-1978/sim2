@@ -3,7 +3,7 @@ locations:
   name: 灯岬
   public: true
   safe: true
-  description: 风脊号泊在最后一块稳定的岩台上。船体漏风，工坊只剩半面墙，但厨房的烟囱还站着。云海在脚下翻涌，像一片不耐烦的海。
+  description: 风脊号泊在最后一块稳定的岩台上。工坊只剩半面墙，厨房的烟囱还站着，接露槽在收帆布上的水。
   tags:
   - public
   - safe
@@ -428,6 +428,11 @@ resources:
   initial_state:
     location_id: lantern_cape
     quantity: 10
+- id: camp_herbs
+  type: resource
+  name: 风脊号药园
+  location_id: lantern_cape
+  initial_state: {location_id: lantern_cape, quantity: 0}
 - id: emergency_copper_cache
   name: 应急铜料箱
   location_id: lantern_cape

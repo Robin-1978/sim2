@@ -1,7 +1,7 @@
 attributes:
 - id: integrity
   kind: state
-  label: 体力
+  label: 健康
   unit: '%'
   min: 0
   max: 100

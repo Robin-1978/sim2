@@ -207,6 +207,18 @@ export function renderActions() {
 export function chooseRecommendedAction(actions) {
     if (!Array.isArray(actions) || !actions.length) return null;
     const view = state.view || {};
+    const attributes = Array.isArray(view.player?.attributes) ? view.player.attributes : [];
+    const attribute = (id) => {
+      const item = attributes.find((entry) => String(entry.id || "") === id);
+      return Number(item?.value ?? item?.current ?? 100);
+    };
+    const urgentNeeds = Object.entries(uiConfig().player_recovery || {})
+      .filter(([id, guide]) => attribute(id) < Number(guide.below))
+      .sort(([left, a], [right, b]) => attribute(left) / a.below - attribute(right) / b.below);
+    for (const [, guide] of urgentNeeds) {
+      const recovery = (guide.behaviors || []).map(id => actions.find(action => action.ref === `behavior:${id}`)).find(Boolean);
+      if (recovery) return recovery;
+    }
     const onboardingRef = String(view.onboarding?.action_ref || "");
     const desiredCategory = onboardingRef ? actionCategory({ ref: onboardingRef }) : "";
     if (onboardingRef) {
@@ -224,11 +236,6 @@ export function chooseRecommendedAction(actions) {
 
     const needs = view.player?.needs || {};
     const need = (id) => Number(needs[id] ?? 100);
-    const attributes = Array.isArray(view.player?.attributes) ? view.player.attributes : [];
-    const attribute = (id) => {
-      const item = attributes.find((entry) => String(entry.id || "") === id);
-      return Number(item?.value ?? item?.current ?? 100);
-    };
     const urgent = need("hydration") < 30
       || need("satiety") < 30
       || attribute("stamina") < 25

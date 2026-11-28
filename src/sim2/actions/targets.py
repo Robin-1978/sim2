@@ -38,6 +38,10 @@ class TargetResolver:
         entity_id = self.canonical_id(value)
         return self.store.repositories.entities.get_entity(entity_id) if entity_id else None
 
+    def location_id(self, value: Any) -> str | None:
+        entity = self.named_entity(value)
+        return entity["id"] if entity and entity["entity_type"] == "location" else None
+
     def visible_agents(self, agent: dict[str, Any]) -> list[dict[str, Any]]:
         """Return other Agents at the actor's current location in stable order."""
 

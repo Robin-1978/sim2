@@ -556,7 +556,8 @@ def _tool_for_role(role: str, name: str) -> dict[str, Any]:
     definition["parameters"] = concise_schema(definition["parameters"])
     if name == "propose_entity":
         definition["parameters"]["properties"]["state"]["description"] = (
-            "Location: routes, distances. Agent: role, goal, behaviors, needs, inventory, place."
+            "Location: routes to existing places, route_distances, public: true for the player map, safe. "
+            "Agent: role, ultimate_goal, initial_bt_ids, needs, inventory, initial_state.location_id."
         )
     if name == "propose_story_beat":
         props = definition["parameters"]["properties"]

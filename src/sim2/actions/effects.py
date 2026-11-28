@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import Any
 
 from ..dsl.expressions import BinaryExpression, Expression, ExpressionSyntaxError, LiteralExpression, ReferenceExpression, UnaryExpression, parse_expression
@@ -15,7 +16,8 @@ class EffectPipeline:
     can execute arbitrary code through an effect definition.
     """
 
-    def __init__(self, attributes: list[dict[str, Any]] | None = None):
+    def __init__(self, attributes: list[dict[str, Any]] | None = None, *, resolve_location: Callable[[Any], str | None] | None = None):
+        self.resolve_location = resolve_location
         self.schema = AttributeSchema(attributes or [])
 
     def apply(self, agent: dict[str, Any], effect: dict[str, Any], *, target: dict[str, Any] | None = None, formula_agent: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -93,6 +95,12 @@ class EffectPipeline:
             result.update({"applied": True, "status": status})
         elif effect_type == "location_set":
             location_id = effect.get("location_id") or target.get("location_id") or target.get("destination_id")
+            if location_id and self.resolve_location is not None:
+                ref = location_id
+                location_id = self.resolve_location(ref)
+                if not location_id:
+                    result["error"] = f"unknown or ambiguous location: {ref}"
+                    return result
             if location_id:
                 state["location_id"] = str(location_id)
                 result.update({"applied": True, "location_id": state["location_id"]})

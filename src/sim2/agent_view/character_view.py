@@ -191,7 +191,6 @@ class CharacterViewMixin:
         return pending_institutions, active_institutions, institution_ledgers
 
     def _agent_story_view(self, agent_id: str, agent: dict[str, Any]) -> tuple[list[Any], list[Any], list[dict[str, Any]], list[dict[str, Any]]]:
-        story_goals = list(agent.get("story_goals", []) or [])[-3:]
         behavior_assignments = [
             item for item in (agent.get("behavior_assignments", []) or [])
             if isinstance(item, dict) and str(item.get("status") or "assigned") == "assigned"
@@ -199,20 +198,26 @@ class CharacterViewMixin:
         agent_name = str(agent.get("name", agent_id))
         story_root = self.store.repositories.metadata.get("story", {}) or {}
         story_root = story_root.get("story", story_root) if isinstance(story_root, dict) else {}
+        story_state = self.store.repositories.metadata.get("story_state", {}) or {}
         story_defs = {
             str(item.get("id")): item
-            for item in list(story_root.get("beats", []) or []) + list((self.store.repositories.metadata.get("story_state", {}) or {}).get("emergent_beats", []) or [])
+            for item in list(story_root.get("beats", []) or []) + list(story_state.get("emergent_beats", []) or [])
             if isinstance(item, dict) and item.get("id")
         }
         active_story_beats: list[dict[str, Any]] = []
-        story_state = self.store.repositories.metadata.get("story_state", {}) or {}
+        closed_goals, active_goals = set(), set()
         for beat_id, entry in story_state.items():
-            if beat_id == "emergent_beats" or not isinstance(entry, dict) or entry.get("status") != "active":
+            if not isinstance(entry, dict):
                 continue
             audience = [str(value) for value in (entry.get("audience", []) or [])]
             if agent_id not in audience and agent_name not in audience:
                 continue
             definition = story_defs.get(str(beat_id), {})
+            goal = str(entry.get("goal_hint") or definition.get("goal_hint") or "")
+            if entry.get("status") != "active":
+                closed_goals.add(goal)
+                continue
+            active_goals.add(goal)
             active_story_beats.append({
                 "summary": str(definition.get("summary", definition.get("goal_hint", beat_id))),
                 "beat_id": str(beat_id),
@@ -220,5 +225,7 @@ class CharacterViewMixin:
             })
         active_story_beats.sort(key=lambda item: item["world_minute"], reverse=True)
         active_story_beats = active_story_beats[:3]
+        obsolete = closed_goals - active_goals
+        story_goals = [goal for goal in agent.get("story_goals", []) or [] if str(goal) not in obsolete][-3:]
         active_story_threads = self._active_story_threads()
         return story_goals, behavior_assignments, active_story_beats, active_story_threads

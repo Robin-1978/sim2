@@ -221,6 +221,8 @@ export function translateCost(text) {
 export function translateImpact(text) {
     let value = String(text || "").trim();
     if (!value) return value;
+    const tool = value.match(/^Tool (.+) saves (\d+) minutes?$/i);
+    if (tool) return `${itemLabel(tool[1])}省 ${tool[2]} 分钟`;
     const direct = [
       [/^Arrive at the selected location\.?$/i, "抵达目的地"],
       [/^No direct resource cost\.?$/i, "无直接消耗"],

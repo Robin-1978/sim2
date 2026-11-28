@@ -69,6 +69,7 @@ def test_compact_evolution_is_valid_and_stored_compiled(tmp_path: Path) -> None:
             {"on": "institution.activated", "for": "story"},
             {"on": "cistern.reviewed", "for": "story"},
             {"on": "research.completed", "for": "god", "count": 2, "every": "1w"},
+            {"on": "world.location.created", "for": "god", "tools": ["propose_entity", "wait"]},
             {"on": "civilization.milestone", "for": "god"},
         ],
     }, allow_unicode=True, sort_keys=False), encoding="utf-8")

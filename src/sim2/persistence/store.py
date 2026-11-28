@@ -76,6 +76,9 @@ CREATE TABLE IF NOT EXISTS event_log (
   data_json TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS event_log_type_idx ON event_log(event_type);
+CREATE INDEX IF NOT EXISTS event_log_completed_action_idx
+  ON event_log(json_extract(data_json,'$.action_id'), world_minute, actor_id)
+  WHERE event_type='action.completed';
 CREATE TABLE IF NOT EXISTS interaction_claim (
   event_id INTEGER PRIMARY KEY,
   claimed_minute INTEGER NOT NULL

@@ -92,7 +92,8 @@ agents:
 - id: laotao
   name: 老陶
   role: 厨师
-  controller: bt
+  controller: llm
+  controller_fallback: bt
   ultimate_goal: 让每个人在坠落前吃上一顿热饭，也让自己记得家的味道。
   traits:
     耐得住: 0.85
@@ -122,6 +123,11 @@ agents:
   - rest_at_camp
   - work_camp
   - cook_meal
+  - travel_windworn
+  - travel_saltbreak
+  - travel_lantern_cape
+  - forage_berries
+  - harvest_salt
   - stargaze
   initial_state:
     location_id: lantern_cape
@@ -131,10 +137,13 @@ agents:
   inventory:
     ration: 5
     water: 5
+    berries: 2
+    salt: 1
 - id: baique
   name: 白雀
   role: 医士
-  controller: bt
+  controller: llm
+  controller_fallback: bt
   ultimate_goal: 把每个伤员都带回去，也把每个没能带回来的人名字记住。
   traits:
     温和: 0.88
@@ -176,7 +185,8 @@ agents:
 - id: xiaoman
   name: 小满
   role: 孩子
-  controller: bt
+  controller: llm
+  controller_fallback: bt
   ultimate_goal: 找到会说话的鸟，也弄清楚风暴为什么总在她睡着时说话。
   traits:
     好奇: 0.95
@@ -218,7 +228,8 @@ agents:
 - id: ke
   name: 阿筝
   role: 风筝人斥候
-  controller: bt
+  controller: llm
+  controller_fallback: bt
   ultimate_goal: 把所有还能系的岛系在一起，也说服风脊号留下。
   traits:
     爽快: 0.8
@@ -259,7 +270,8 @@ agents:
 - id: forge_master
   name: 炉七
   role: 熔炉派工头
-  controller: bt
+  controller: llm
+  controller_fallback: bt
   ultimate_goal: 把雷云工坊的引擎拆下来，赶在风暴前离开。
   traits:
     现实: 0.9
@@ -300,7 +312,8 @@ agents:
 - id: choir_keeper
   name: 灯婆
   role: 风歌者守灯人
-  controller: bt
+  controller: llm
+  controller_fallback: bt
   ultimate_goal: 让风暴重新呼吸，也让旧灯塔的名字有人记住。
   traits:
     安静: 0.9

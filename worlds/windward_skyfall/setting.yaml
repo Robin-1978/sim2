@@ -3,6 +3,12 @@ premise: 裂天群岛正在下沉。带上五名船员，在风暴合拢前找�
 genre: 群岛求生 · 探索与抉择
 locale: zh-CN
 ui:
+  player_summary_attributes: [integrity, stamina, hydration, satiety]
+  player_recovery:
+    stamina: {below: 25, behaviors: [rest_at_camp, rest_rough]}
+    hydration: {below: 30, behaviors: [drink_at_camp, drink_water, fill_water, forage_supplies]}
+    satiety: {below: 30, behaviors: [eat_at_camp, eat_stew, eat_ration, take_ration, forage_supplies]}
+    integrity: {below: 30, behaviors: [use_salve, dress_wounds, rest_at_camp, rest_rough]}
   cover_art: assets/dawn.webp
   scene_art:
     lantern_cape: assets/lantern-cape.webp
@@ -43,7 +49,7 @@ ui:
     max: 1
     danger_below: 0.3
     warning_below: 0.5
-    hint: 士气影响结局
+    hint: 热饭、观星和互助能提振士气
   tagline: 天快塌了。绞盘只能再拉一次。
   cast_order:
   - alan

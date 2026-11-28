@@ -6,11 +6,12 @@ from typing import Any
 from uuid import uuid4
 
 from ..world.context import action_condition_context, calendar_context, conflict_context
-from ..world.definition_compiler import condition_syntax_error, effect_payload_error
+from ..world.definition_compiler import bind_legacy_inventory_effect, condition_syntax_error, effect_payload_error
 from ..world.execution_recipes import execution_recipe, pin_execution_recipe
 from ..world.lifecycle import trim_unlocked_behaviors, unlocked_behavior_limit
 from ..actions.institutions import allocation_preflight
 from ..actions.catalogs import resolve_catalog_entry
+from ..actions.pacing import SOCIAL_OUTCOME_DELIVERED, generated_action_unavailable
 from ..evolution.memory import update_role_memory_status
 
 
@@ -42,6 +43,8 @@ class ActivityRuntimeMixin:
         action = self._action_definition(action_info)
         if not action:
             return False, f"action is not registered: {action_id}"
+        if reason := generated_action_unavailable(self.store, action, agent, minute):
+            return False, reason
         state = dict(agent.get("initial_state") or {})
         parameters = self._context.services["execution"].resolve_activity_parameters(dict(action_info.get("parameters") or {}), state)
         parameters = self._context.services["execution"].apply_action_parameter_defaults(agent, action, parameters)
@@ -154,6 +157,8 @@ class ActivityRuntimeMixin:
         action = self._action_definition(action_info)
         if not action:
             return None, f"action is not registered: {action_info.get('action_id')}"
+        if reason := generated_action_unavailable(self.store, action, agent, minute):
+            return None, reason
         state = dict(agent.get("initial_state") or {})
         parameters = self._context.services["execution"].resolve_activity_parameters(dict(action_info.get("parameters") or {}), state)
         parameters = self._context.services["execution"].apply_action_parameter_defaults(agent, action, parameters)
@@ -576,6 +581,7 @@ class ActivityRuntimeMixin:
             return [location_reason]
         effects = list(action.get("effects", []) or [])
         for effect in effects:
+            effect = bind_legacy_inventory_effect(effect, action.get("parameters") or {}, parameters)
             if error := effect_payload_error(effect):
                 return [*errors, error]
             resolved_effect = {
@@ -595,7 +601,15 @@ class ActivityRuntimeMixin:
                 effect_target = {**effect_target, "weapon": {"damage": weapon_damage}}
             effect_type = str(effect.get("type") or effect.get("op") or "")
             if effect_type == "relationship_delta":
-                self.apply_relationship_effect(agent, target or effect_target, effect, minute)
+                related = target or effect_target
+                explicit = resolved_effect.get("target_id") or resolved_effect.get("target")
+                if explicit and explicit not in ("actor", "target"):
+                    related_id = self.targets.canonical_id(explicit)
+                    if not related_id or related_id == agent["id"] or (target and target.get("id") != related_id):
+                        errors.append(f"relationship_delta target is invalid or conflicts with action target: {explicit}")
+                        continue
+                    related = {"id": related_id}
+                self.apply_relationship_effect(agent, related, resolved_effect, minute)
             elif effect_type == "public_event":
                 event_type = str(effect["event"])
 
@@ -625,6 +639,7 @@ class ActivityRuntimeMixin:
                 # ``context.case_slot`` property.
                 property_id = str(resolved_effect.get("property") or resolved_effect.get("world_property") or "")
                 if property_id:
+                    property_id = self._context.services["tick"].world_property_key(property_id)
                     properties = dict(self.store.repositories.metadata.get("world_properties", {}) or {})
                     before_value = properties.get(property_id)
                     value = float(before_value or 0) + float(resolved_effect.get("delta", resolved_effect.get("value", 0)) or 0)
@@ -632,7 +647,7 @@ class ActivityRuntimeMixin:
                         value = max(float(resolved_effect["minimum"]), value)
                     if isinstance(resolved_effect.get("maximum"), (int, float)):
                         value = min(float(resolved_effect["maximum"]), value)
-                    self._context.services["tick"].set_world_property(property_id, value)
+                    value = self._context.services["tick"].set_world_property(property_id, value)["after"]
                     self._context.services["events"].append(
                         "world.property_changed", agent["id"], minute,
                         {"property": property_id, "before": before_value, "after": value, "delta": value - float(before_value or 0), "source": action.get("id")},
@@ -640,6 +655,7 @@ class ActivityRuntimeMixin:
             elif effect_type == "world_property_set":
                 property_id = str(resolved_effect.get("property") or resolved_effect.get("world_property") or "")
                 if property_id:
+                    property_id = self._context.services["tick"].world_property_key(property_id)
                     properties = dict(self.store.repositories.metadata.get("world_properties", {}) or {})
                     before_value = properties.get(property_id)
                     value = resolved_effect.get("value")
@@ -647,7 +663,7 @@ class ActivityRuntimeMixin:
                         value = parameters.get(str(resolved_effect.get("value_from") or ""))
                     if isinstance(value, str) and value.startswith("context."):
                         value = parameters.get(value.removeprefix("context."), value)
-                    self._context.services["tick"].set_world_property(property_id, value)
+                    value = self._context.services["tick"].set_world_property(property_id, value)["after"]
                     self._context.services["events"].append(
                         "world.property_changed", agent["id"], minute,
                         {"property": property_id, "before": before_value, "after": value, "delta": None, "source": action.get("id"), "mode": "set"},
@@ -1009,6 +1025,9 @@ class ActivityRuntimeMixin:
         world mutation behind.
         """
 
+        # Another resident can finish the shared outcome while this work is in flight.
+        if reason := generated_action_unavailable(self.store, action, agent, minute):
+            return reason, None
         original_agent = copy.deepcopy(agent)
         savepoint = f"action_effects_{uuid4().hex}"
         self.store.connection.execute(f"SAVEPOINT {savepoint}")
@@ -1543,7 +1562,8 @@ class ActivityRuntimeMixin:
                 self.store.repositories.memory.merge_knowledge_fact(agent["id"], fact_key, {"fact": str(configured["fact"]), "source_type": str(configured.get("source_type") or "behavior"), "source_id": behavior_id, "behavior": behavior_id, "confidence": float(configured.get("confidence", 0.8)), "observed_at": minute})
         state["status"] = "idle" if status == "completed" else "failed"
         blocked_behaviors = dict(state.get("blocked_behaviors") or {})
-        if status == "completed":
+        cooling_down = result.startswith("cooldown until")
+        if status == "completed" or cooling_down or result == SOCIAL_OUTCOME_DELIVERED:
             blocked_behaviors.pop(str(behavior_id), None)
         else:
             blocked_behaviors[str(behavior_id)] = {
@@ -1557,7 +1577,7 @@ class ActivityRuntimeMixin:
         for assignment in assignments:
             if not isinstance(assignment, dict) or str(assignment.get("behavior_id")) != str(behavior_id):
                 continue
-            if str(assignment.get("status") or "assigned") != "assigned":
+            if cooling_down or str(assignment.get("status") or "assigned") != "assigned":
                 continue
             assignment.update({
                 "status": "completed" if status == "completed" else "failed",
@@ -1629,7 +1649,7 @@ class ActivityRuntimeMixin:
         behavior_event_id = self._context.services["events"].append(f"behavior.{status}", agent["id"], minute, {"execution_id": execution_id, "behavior_id": behavior_id, "result": result, "outcome": outcome})
         if status == "completed":
             self._record_active_institution_entries(behavior_event_id, "behavior.completed", agent["id"], minute, {"execution_id": execution_id, "behavior_id": behavior_id, "result": result, "outcome": outcome})
-            self._complete_story_beats_for_actor(agent["id"], behavior_id, minute)
+            self._complete_story_beats_for_actor(agent["id"], behavior_id, minute, behavior_event_id, result)
         else:
             self._block_story_beats_for_failed_followup(agent["id"], behavior_id, minute, behavior_event_id, result)
 
@@ -1708,7 +1728,9 @@ class ActivityRuntimeMixin:
         self.store.repositories.metadata.set("story_state", state)
         self._context.services["events"].wake(source_event_id, "behavior.failed", actor_id, minute, wake="story_source")
 
-    def _complete_story_beats_for_actor(self, actor_id: str, behavior_id: str, minute: int) -> None:
+    def _complete_story_beats_for_actor(
+        self, actor_id: str, behavior_id: str, minute: int, behavior_event_id: int | None = None, result: str = "",
+    ) -> None:
         """Close active audience beats after a matching follow-up behavior.
 
         Beats are one-shot narrative threads.  When a beat declares
@@ -1788,7 +1810,12 @@ class ActivityRuntimeMixin:
                 behavior_id=behavior_id,
             )
             changed = True
-            self._context.services["events"].append("story.beat.completed", actor_id, minute, {"beat_id": beat_id, "behavior_id": behavior_id})
+            self._context.services["events"].publish("story.beat.completed", actor_id, minute, {
+                "beat_id": beat_id, "behavior_id": behavior_id,
+                "chapter_title": package_beats.get(str(beat_id), {}).get("agent_label") or entry.get("summary", ""),
+                "behavior_label": definitions.get(behavior_id, {}).get("agent_label", behavior_id),
+                "behavior_event_id": behavior_event_id, "result": result,
+            }, wake="configured")
         if changed:
             self.store.repositories.metadata.set("story_state", state)
 

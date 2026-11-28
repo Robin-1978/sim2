@@ -1,4 +1,4 @@
-import { activateInstance, advanceTask, beginAction, closeEditor, closeSettings, createWorldInstance, loadDialogue, loadEntryContext, loadFeed, loadInstances, loadRuntime, loadTrades, loadView, openAdmin, openEditor, openMap, openSettings, openWorldHub, refreshAll, restorePlayer, returnToGame, runtimeCommand, selectedProvider, sendDialogue, sendTrade, showEntry, startStream, submitEntry, unlockOperator, unlockOperatorFromEntry, waitFor, waitOneMinute } from "./actions.js";
+import { activateInstance, advanceTask, beginAction, closeEditor, closeSettings, createWorldInstance, loadDialogue, loadEntryContext, loadFeed, loadInstances, loadRuntime, loadTrades, loadView, openAdmin, openEditor, openMap, openSettings, openWorldHub, refreshAll, restorePlayer, returnToGame, runtimeCommand, selectedProvider, sendDialogue, sendTrade, showEntry, showGameScreen, startStream, submitEntry, unlockOperator, unlockOperatorFromEntry, waitFor, waitOneMinute } from "./actions.js";
 import { unlockFromOwnerLink } from "./api.js";
 import { armSoundOnGesture, renderSoundButton, toggleSound } from "./audio.js";
 import { shareChapter } from "./celebration.js";
@@ -41,9 +41,11 @@ export function renderAll() {
   /* ---------- Wiring ---------- */
 
 export function wireUi() {
-    $("hud-refresh").innerHTML = icon("refresh");
+    for (const button of document.querySelectorAll(".game-nav button")) {
+      button.addEventListener("click", () => showGameScreen(button.dataset.screen));
+    }
+
     $("hud-worlds").innerHTML = icon("globe");
-    $("hud-editor").innerHTML = icon("pen");
     $("hud-sound").innerHTML = icon("soundOff");
     $("hud-settings").innerHTML = icon("settings");
     $("settings-close").innerHTML = "";
@@ -52,9 +54,8 @@ export function wireUi() {
     state.soundOn = Boolean(storageGet(SOUND_KEY, false));
     renderSoundButton();
 
-    $("hud-refresh").addEventListener("click", () => refreshAll());
+    $("settings-refresh").addEventListener("click", () => refreshAll());
     $("hud-worlds").addEventListener("click", () => openWorldHub());
-    $("hud-editor").addEventListener("click", () => openEditor());
     $("hud-sound").addEventListener("click", toggleSound);
     $("hud-settings").addEventListener("click", openSettings);
     $("recap-dismiss").addEventListener("click", dismissRecap);
@@ -111,6 +112,7 @@ export function wireUi() {
       button.addEventListener("click", (event) => waitFor(Number(event.currentTarget.dataset.waitMinutes), event.currentTarget));
     }
     $("player-details").addEventListener("click", openPlayerSheet);
+    $("scene-player-bag").addEventListener("click", openPlayerSheet);
     $("player-sheet-close").addEventListener("click", closePlayerSheet);
     for (const scrim of document.querySelectorAll("[data-close-player]")) scrim.addEventListener("click", closePlayerSheet);
     $("action-more").addEventListener("click", () => {

@@ -24,6 +24,36 @@ class ActivityRepository:
         ).fetchone()
         return int(row["minute"]) if row and row["minute"] is not None else None
 
+    def last_action_completion(self, action_ids: set[str], *, player_id: str | None) -> int | None:
+        """Find the last delivery for this player or the shared resident audience."""
+        if not action_ids:
+            return None
+        placeholders = ",".join("?" for _ in action_ids)
+        audience = "e.actor_id=?" if player_id else """
+            EXISTS (SELECT 1 FROM agent_state a WHERE a.id=e.actor_id
+                    AND COALESCE(json_extract(a.data_json,'$.role'),'')!='player')
+        """
+        row = self.store.connection.execute(
+            "SELECT MAX(e.world_minute) FROM event_log e WHERE e.event_type='action.completed' "
+            f"AND json_extract(e.data_json,'$.action_id') IN ({placeholders}) AND {audience}",
+            (*sorted(action_ids), player_id) if player_id else tuple(sorted(action_ids)),
+        ).fetchone()
+        return row[0]
+
+    def recent_generated_resident_actions(self, since_minute: int) -> list[dict[str, Any]]:
+        return [dict(row) for row in self.store.connection.execute("""
+            SELECT COALESCE(json_extract(d.data_json,'$.name'), d.id) AS action,
+                   COUNT(*) AS completions, COUNT(DISTINCT e.actor_id) AS residents
+            FROM event_log e
+            JOIN action_def d ON d.id=json_extract(e.data_json,'$.action_id')
+            JOIN agent_state a ON a.id=e.actor_id
+            WHERE e.event_type='action.completed' AND e.world_minute>=?
+              AND json_extract(d.data_json,'$.definition_source')='god_proposal'
+              AND COALESCE(json_extract(a.data_json,'$.role'),'')!='player'
+            GROUP BY d.id
+            ORDER BY completions DESC, d.id LIMIT 5
+        """, (since_minute,))]
+
     def put_bt_instance(self, execution_id: str, actor_id: str, behavior_id: str, status: str, current_node: int, data: dict[str, Any], started_minute: int, updated_minute: int) -> None:
         self.store.connection.execute(
             "INSERT OR REPLACE INTO bt_instance(execution_id,actor_id,behavior_id,status,current_node,data_json,started_minute,updated_minute) VALUES (?,?,?,?,?,?,?,?)",

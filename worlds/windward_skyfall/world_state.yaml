@@ -19,6 +19,8 @@ world_state:
     workshop_level: 0
     galley_level: 0
     garden_level: 0
+    cistern_level: 0
+    camp_herbs: 0
     infirmary_level: 0
     beacon_frame: 0
     beacon_cores: 0
@@ -26,6 +28,8 @@ world_state:
     crew_count: 5
     camp_morale: 0.6
     ending_trigger: 0
+    voyage_phase: 1
+    long_drift_seen: 0
     kite_rep: 0.1
     foundry_rep: 0.1
     choir_rep: 0.1

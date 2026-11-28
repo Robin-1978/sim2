@@ -37,8 +37,8 @@ class Platform:
         rules = self.store.repositories.metadata.get("rules", {}) or {}
         self.attribute_schema = AttributeSchema(self.store.repositories.metadata.get("attributes", []) or [], rules)
         self.conditions = ConditionEngine(rules)
-        self.effects = EffectPipeline(self.store.repositories.metadata.get("attributes", []) or [])
         self.targets = TargetResolver(self.store)
+        self.effects = EffectPipeline(self.store.repositories.metadata.get("attributes", []) or [], resolve_location=self.targets.location_id)
         self.resources = ResourceLedger(self.store)
         self._service_context = PlatformContext(self, {
             "store": self.store,

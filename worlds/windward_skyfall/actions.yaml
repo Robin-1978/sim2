@@ -19,7 +19,7 @@ actions:
   - type: public_event
     event: skyfall.dawn_salvage
     data: {choice: rescue}
-    summary: 铜料沉入云海。获救的斥候在海图上标出雨背崖的侧风，叫你在船上装一只信标，那里有人等补给。
+    summary: 斥候被拉上甲板。另一根缆绳从铜箱上脱落，整箱铜料沉入云海。风筝人看见了船员的选择。
   failure:
     condition: actor.incapacitated or world.dawn_salvage != 0 or context.day_phase != 'dawn' or world.ending_trigger != 0
     result: dawn_salvage_closed
@@ -49,7 +49,7 @@ actions:
   - type: public_event
     event: skyfall.dawn_salvage
     data: {choice: copper}
-    summary: 斥候的求救灯消失在云里。阿岚收起备用铜板，指着余下的铜料说，这些够搭一副能在低空拖货的打捞架。
+    summary: 铜箱落上甲板。阿岚收起应急铜板，留下两份铜矿。船员再向舷外看时，云里已经没有灯光。
   failure:
     condition: actor.incapacitated or world.dawn_salvage != 0 or context.day_phase != 'dawn' or world.ending_trigger != 0
     result: dawn_salvage_closed
@@ -261,6 +261,11 @@ actions:
   - location.resource_node
   duration:
     minutes: 60
+    tool_bonuses:
+    - {item: stone_axe, multiplier: 0.75, resource_tags: [wood, fiber]}
+    - {item: stone_knife, multiplier: 0.65, resource_tags: [fiber, berries, herb, mushroom]}
+    - {item: stone_pick, multiplier: 0.75, resource_tags: [stone, clay, glass_sand, salt]}
+    - {item: copper_pick, multiplier: 0.60, resource_tags: [stone, clay, glass_sand, salt]}
   costs:
     reserve:
       resource_parameter: resource_tag
@@ -324,7 +329,7 @@ actions:
 - id: quarry_stone
   verb: gather
   version: 1
-  description: 用石镐敲下五份石块。
+  description: 用镐敲下五份石块，铜镐更快。
   parameters:
     resource_tag: string
     location_id: string
@@ -332,9 +337,11 @@ actions:
   - actor.can_gather
   - actor.alive
   - location.resource_node
-  - actor.inventory.stone_pick >= 1
+  - actor.inventory.stone_pick >= 1 or actor.inventory.copper_pick >= 1
   duration:
     minutes: 90
+    tool_bonuses:
+    - {item: copper_pick, multiplier: 0.60}
   costs:
     reserve:
       resource_parameter: resource_tag
@@ -361,7 +368,7 @@ actions:
 - id: mine_copper
   verb: gather
   version: 1
-  description: 用石镐从铜脉里敲下两份铜矿。
+  description: 用镐从铜脉里敲下两份铜矿，铜镐更快。
   parameters:
     resource_tag: string
     location_id: string
@@ -369,9 +376,11 @@ actions:
   - actor.can_gather
   - actor.alive
   - location.resource_node
-  - actor.inventory.stone_pick >= 1
+  - actor.inventory.stone_pick >= 1 or actor.inventory.copper_pick >= 1
   duration:
     minutes: 90
+    tool_bonuses:
+    - {item: copper_pick, multiplier: 0.60}
   costs:
     reserve:
       resource_parameter: resource_tag
@@ -403,7 +412,7 @@ actions:
 - id: mine_coal
   verb: gather
   version: 1
-  description: 从煤层里收两份煤。
+  description: 用镐从煤层里收两份煤，铜镐更快。
   parameters:
     resource_tag: string
     location_id: string
@@ -411,9 +420,11 @@ actions:
   - actor.can_gather
   - actor.alive
   - location.resource_node
-  - actor.inventory.stone_pick >= 1
+  - actor.inventory.stone_pick >= 1 or actor.inventory.copper_pick >= 1
   duration:
     minutes: 75
+    tool_bonuses:
+    - {item: copper_pick, multiplier: 0.60}
   costs:
     reserve:
       resource_parameter: resource_tag
@@ -451,6 +462,8 @@ actions:
   - actor.inventory.copper_pick >= 1
   duration:
     minutes: 120
+    tool_bonuses:
+    - {item: crystal_saw, multiplier: 0.70}
   costs:
     reserve:
       resource_parameter: resource_tag
@@ -493,6 +506,8 @@ actions:
   - actor.inventory.lantern >= 1
   duration:
     minutes: 90
+    tool_bonuses:
+    - {item: crystal_saw, multiplier: 0.70}
   costs:
     reserve:
       resource_parameter: resource_tag
@@ -535,6 +550,8 @@ actions:
   - actor.inventory.copper_pick >= 1
   duration:
     minutes: 90
+    tool_bonuses:
+    - {item: crystal_saw, multiplier: 0.70}
   costs:
     reserve:
       resource_parameter: resource_tag
@@ -701,6 +718,8 @@ actions:
   preconditions:
   - actor.alive
   - location.tag.salvage
+  - context.amount == 2
+  - context.item in ['wood', 'fiber', 'stone', 'salt', 'clay', 'glass_sand', 'copper_ore', 'coal', 'herb', 'mushroom', 'oil', 'bone', 'amber', 'crystal', 'relic']
   - context.current_location.id == context.destination_id
   duration:
     minutes: 60
@@ -1983,20 +2002,21 @@ actions:
 - id: anchor_islands
   verb: repair
   version: 1
-  description: 把信标对准群岛的锚点，让它们重新系在一起。
+  description: 用两枚信标核心和四份纤维固定锚线，由风筝人与船员共同守锚。
   parameters: {}
   preconditions:
   - actor.alive
   - location.tag.camp
   - world.beacon_frame >= 1
-  - world.beacon_cores >= 3
+  - world.beacon_cores >= 2
   - world.garden_level >= 2
   - world.kite_rep >= 0.4
+  - actor.inventory.fiber >= 4
   - world.ending_trigger == 0
   duration:
     minutes: 240
   costs:
-    reserve: {}
+    reserve: {fiber: 4}
     per_minute:
       stamina: 0.08
     on_success: {}
@@ -2192,13 +2212,13 @@ actions:
 - id: rest_at_camp
   verb: rest
   version: 1
-  description: 在灯岬的炉火边休息，恢复精力和体力。
+  description: 在灯岬的炉火边休息，恢复 60 点精力和 10 点健康。
   parameters: {}
   preconditions:
   - actor.alive
   - location.tag.camp
   duration:
-    minutes: 240
+    minutes: 90
   costs:
     reserve: {}
     per_minute: {}
@@ -2235,7 +2255,7 @@ actions:
   preconditions:
   - actor.alive
   duration:
-    minutes: 180
+    minutes: 90
   costs:
     reserve: {}
     per_minute: {}
@@ -2245,7 +2265,7 @@ actions:
   effects:
   - type: attribute_delta
     attribute: stamina
-    delta: 30
+    delta: 50
     maximum: 100
   - type: attribute_delta
     attribute: integrity
@@ -2300,7 +2320,7 @@ actions:
 - id: sleep
   verb: rest
   version: 1
-  description: 在风脊号上睡到下一次天亮。
+  description: 在风脊号上睡八小时，把精力恢复到满值。
   parameters: {}
   preconditions:
   - actor.alive
@@ -2410,16 +2430,19 @@ actions:
 - id: cook_meal
   verb: craft
   version: 1
-  description: 用厨房的储备做一锅热饭，让所有人明天有口粮。
+  description: 用两份浆果和一份盐做一锅热饭，往口粮箱添六份。
   parameters: {}
   preconditions:
   - actor.alive
   - location.tag.camp
   - world.galley_level >= 1
+  - world.ration <= 10
+  - actor.inventory.berries >= 2
+  - actor.inventory.salt >= 1
   duration:
-    minutes: 60
+    minutes: 40
   costs:
-    reserve: {}
+    reserve: {berries: 2, salt: 1}
     per_minute:
       stamina: 0.05
     on_success: {}
@@ -2428,7 +2451,7 @@ actions:
   effects:
   - type: world_resource_delta
     resource_id: ration
-    delta: 2
+    delta: 6
     maximum: 16
   - type: world_property_delta
     property: camp_morale
@@ -2450,25 +2473,27 @@ actions:
 - id: tend_garden
   verb: work
   version: 1
-  description: 给花园浇水、补藤架，收一点口粮。
+  description: 用一份淡水照料花园，催熟两份待采药草。
   parameters: {}
   preconditions:
   - actor.alive
   - location.tag.camp
   - world.garden_level >= 1
+  - world.camp_herbs <= 6
+  - actor.inventory.water >= 1
   duration:
     minutes: 60
   costs:
-    reserve: {}
+    reserve: {water: 1}
     per_minute: {}
     on_success: {}
     on_failure: {}
     refund: {}
   effects:
   - type: world_resource_delta
-    resource_id: ration
-    delta: 1
-    maximum: 16
+    resource_id: camp_herbs
+    delta: 2
+    maximum: 8
   - type: world_property_delta
     property: camp_morale
     delta: 0.005
@@ -2798,3 +2823,135 @@ actions:
   executor: effect_pipeline
   interrupt_policy: cancel
   interaction_policy: allow
+- id: drink_at_camp
+  verb: consume
+  description: 在船上直接喝一份水箱里的淡水，恢复 40 点水分。
+  parameters: {resource_tag: string}
+  preconditions:
+  - actor.alive
+  - location.tag.camp
+  - actor.need.hydration <= 65
+  - world.water >= 1
+  - context.resource_tag == 'water'
+  duration: {minutes: 5}
+  costs:
+    reserve: {resource_parameter: resource_tag, resource_amount: 1}
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - {type: need_delta, need: hydration, delta: 40}
+  success: {condition: actor.alive, result: drank}
+  failure: {condition: actor.incapacitated, result: failed}
+- id: eat_at_camp
+  verb: consume
+  description: 直接吃一份口粮箱里的口粮，恢复 35 点饱食。
+  parameters: {resource_tag: string}
+  preconditions:
+  - actor.alive
+  - location.tag.camp
+  - actor.need.satiety <= 65
+  - world.ration >= 1
+  - context.resource_tag == 'ration'
+  duration: {minutes: 10}
+  costs:
+    reserve: {resource_parameter: resource_tag, resource_amount: 1}
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - {type: need_delta, need: satiety, delta: 35}
+  success: {condition: actor.alive, result: eaten}
+  failure: {condition: actor.incapacitated, result: failed}
+- id: build_cistern
+  verb: repair
+  description: 支起集水帆。每六小时收水从三份变六份，水箱容量从 24 增至 36。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - location.tag.camp
+  - world.cistern_level == 0
+  - actor.inventory.wood >= 3
+  - actor.inventory.fiber >= 2
+  - actor.inventory.clay >= 2
+  duration: {minutes: 75}
+  costs:
+    reserve: {wood: 3, fiber: 2, clay: 2}
+    per_minute: {stamina: 0.10}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - {type: world_property_set, property: cistern_level, value: 1}
+  - {type: entity_state_set, entity_id: camp_cistern, state: level, value: 1}
+  - {type: public_event, event: camp.cistern_built, summary: 集水帆立起来了，云雾顺着导流槽流进水箱。}
+  success: {condition: actor.alive, result: cistern_built}
+  failure: {condition: actor.incapacitated or world.cistern_level >= 1, result: build_failed}
+- id: harvest_camp_herbs
+  verb: gather
+  description: 从船上的药园采两份药草。石刀可以加快采收。
+  parameters: {resource_tag: string}
+  preconditions:
+  - actor.alive
+  - location.tag.camp
+  - world.garden_level >= 1
+  - world.camp_herbs >= 2
+  - context.resource_tag == 'camp_herbs'
+  duration:
+    minutes: 20
+    tool_bonuses:
+    - {item: stone_knife, multiplier: 0.65}
+  costs:
+    reserve: {resource_parameter: resource_tag, resource_amount: 2}
+    per_minute: {stamina: 0.08}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - {type: inventory_add, item: herb, quantity: 2}
+  success: {condition: actor.alive, result: resource_gathered}
+  failure: {condition: actor.incapacitated, result: gathering_failed}
+- id: dress_wounds
+  verb: consume
+  description: 用一份药草包扎自己的伤口，恢复 15 点健康。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - actor.state.integrity <= 85
+  - actor.inventory.herb >= 1
+  duration: {minutes: 10}
+  costs:
+    reserve: {herb: 1}
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - {type: attribute_delta, attribute: integrity, delta: 15, maximum: 100}
+  success: {condition: actor.alive, result: wounds_dressed}
+  failure: {condition: actor.incapacitated, result: failed}
+- id: cut_crystal_seam
+  verb: gather
+  description: 用晶锯一次切下两块晶石，耗时 120 分钟，风暴压力增加 12。
+  parameters: {resource_tag: string}
+  preconditions:
+  - actor.alive
+  - actor.can_gather
+  - location.tag.thunderhead
+  - context.resource_tag == 'crystal'
+  - actor.inventory.crystal_saw >= 1
+  - world.storm_pressure <= 88
+  duration: {minutes: 120}
+  costs:
+    reserve: {resource_parameter: resource_tag, resource_amount: 2}
+    per_minute: {stamina: 0.15}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - {type: inventory_add, item: crystal, quantity: 2}
+  - {type: world_property_delta, property: storm_pressure, delta: 12, maximum: 100, label: 风暴压力}
+  success: {condition: resource.collected, result: resource_gathered}
+  failure: {condition: actor.incapacitated, result: gathering_failed}

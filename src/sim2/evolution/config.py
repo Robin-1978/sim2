@@ -30,6 +30,8 @@ _RUNTIME_EVENTS = {
     "institution.ledger_entry",
     "institution.allocation_completed",
     "resource.safety_low",
+    "world.location.created",
+    "world.resource.created",
     "world.stagnation",
 }
 
@@ -111,7 +113,7 @@ def _stagnation(value: Any) -> dict[str, Any]:
 def _director(value: Any) -> dict[str, Any]:
     if not isinstance(value, dict):
         raise ValueError("director must be an object")
-    unknown = sorted(str(key) for key in value if key not in {"cadence", "window", "targets", "policy", "max_cell_units", "saturation", "kickoff", "context_properties", "behavior_action", "evidence", "followups"})
+    unknown = sorted(str(key) for key in value if key not in {"cadence", "window", "targets", "policy", "max_cell_units", "saturation", "kickoff", "context_properties", "context_events", "context_residents", "behavior_action", "evidence", "followups", "narrative_direction", "replan_on"})
     if unknown:
         raise ValueError("unknown director field(s): " + ", ".join(unknown))
     cadence = duration_minutes(value.get("cadence", "1d"))
@@ -121,6 +123,9 @@ def _director(value: Any) -> dict[str, Any]:
     policy = str(value.get("policy") or "deterministic").strip().casefold()
     if policy not in {"deterministic", "llm"}:
         raise ValueError("director.policy must be deterministic or llm")
+    narrative_direction = value.get("narrative_direction", False)
+    if type(narrative_direction) is not bool or (narrative_direction and policy != "llm"):
+        raise ValueError("director.narrative_direction must be a boolean and requires policy: llm when enabled")
     max_cell_units = value.get("max_cell_units", 0)
     if isinstance(max_cell_units, bool) or not isinstance(max_cell_units, int) or max_cell_units < 0:
         raise ValueError("director.max_cell_units must be a non-negative integer")
@@ -136,6 +141,17 @@ def _director(value: Any) -> dict[str, Any]:
     if not isinstance(raw_context, (list, tuple)):
         raise ValueError("director.context_properties must be a list")
     context_properties = [str(item).strip() for item in raw_context if str(item).strip()]
+    context_events = value.get("context_events", [])
+    if not isinstance(context_events, list) or any(not isinstance(item, str) or not item.strip() for item in context_events):
+        raise ValueError("director.context_events must be a list of event types")
+    if narrative_direction and not context_events:
+        raise ValueError("director.narrative_direction requires context_events for grounding")
+    replan_on = value.get("replan_on", [])
+    if not isinstance(replan_on, list) or any(not isinstance(item, str) or not item.strip() for item in replan_on):
+        raise ValueError("director.replan_on must be a list of event types")
+    context_residents = value.get("context_residents", 0)
+    if type(context_residents) is not int or not 0 <= context_residents <= 8:
+        raise ValueError("director.context_residents must be an integer from 0 to 8")
     raw_targets = value.get("targets", ["place", "verb", "social", "rule"])
     if isinstance(raw_targets, str):
         raw_targets = [raw_targets]
@@ -174,10 +190,14 @@ def _director(value: Any) -> dict[str, Any]:
         "window_minutes": window,
         "targets": list(dict.fromkeys(targets)),
         "policy": policy,
+        **({"narrative_direction": True} if narrative_direction else {}),
+        **({"replan_on": list(dict.fromkeys(item.strip() for item in replan_on))} if replan_on else {}),
         "max_cell_units": int(max_cell_units),
         "saturation": saturation,
         "kickoff": bool(kickoff),
         "context_properties": list(dict.fromkeys(context_properties)),
+        **({"context_residents": context_residents} if context_residents else {}),
+        **({"context_events": list(dict.fromkeys(item.strip() for item in context_events))} if context_events else {}),
         **({"evidence": evidence} if evidence else {}),
         **({"followups": compiled_followups} if followups else {}),
         **({"behavior_action": behavior_action.strip()} if behavior_action else {}),
@@ -219,6 +239,17 @@ def _limits(value: Any) -> dict[str, Any]:
         compiled["max_ready_god_tasks"] = count
     if "continue_during_cooldown" in value and not isinstance(value["continue_during_cooldown"], bool):
         raise ValueError("limits.continue_during_cooldown must be a boolean")
+    if "generated_action_pacing" in value:
+        pacing = value["generated_action_pacing"]
+        if not isinstance(pacing, dict) or pacing.keys() - {"resident_cooldown", "social_milestone_once"}:
+            raise ValueError("limits.generated_action_pacing accepts resident_cooldown and social_milestone_once")
+        once = pacing.get("social_milestone_once", False)
+        if type(once) is not bool:
+            raise ValueError("limits.generated_action_pacing.social_milestone_once must be a boolean")
+        compiled["generated_action_pacing"] = {
+            "resident_cooldown": duration_minutes(pacing["resident_cooldown"]) if "resident_cooldown" in pacing else 0,
+            "social_milestone_once": once,
+        }
     return compiled
 
 
@@ -326,7 +357,7 @@ def normalize_evolution_config(value: dict[str, Any] | None) -> dict[str, Any]:
             raise ValueError("contracts must be an object keyed by task type")
         allowed = {
             "tools", "purpose", "result", "assign_to", "required_definition_type",
-            "require_story_outcome", "evidence_sources", "continuation", "growth_kind",
+            "require_story_outcome", "require_resident_assignee", "evidence_sources", "continuation", "growth_kind",
             "required_content", "stages", "max_proposals", "max_tool_calls", "behavior_constraints",
         }
         for task_type, contract in contracts.items():
@@ -341,6 +372,8 @@ def normalize_evolution_config(value: dict[str, Any] | None) -> dict[str, Any]:
                 raise ValueError(f"contract {task_type}.tools must be a list")
             if contract.get("assign_to") is not None and not isinstance(contract.get("assign_to"), list):
                 raise ValueError(f"contract {task_type}.assign_to must be a list")
+            if "require_resident_assignee" in contract and not isinstance(contract["require_resident_assignee"], bool):
+                raise ValueError(f"contract {task_type}.require_resident_assignee must be a boolean")
             if contract.get("required_content") is not None and not isinstance(contract.get("required_content"), dict):
                 raise ValueError(f"contract {task_type}.required_content must be an object")
             if contract.get("behavior_constraints") is not None:

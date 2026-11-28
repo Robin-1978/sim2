@@ -1,4 +1,14 @@
 recipes:
+- id: stone_knife
+  name: 石刀
+  station_tags:
+  - craft
+  inputs:
+  - {item: stone, quantity: 1}
+  - {item: wood, quantity: 1}
+  outputs:
+  - {item: stone_knife, quantity: 1}
+  duration_minutes: 25
 - id: camp_ration
   name: 营地口粮
   station_tags:
@@ -10,7 +20,7 @@ recipes:
     quantity: 1
   outputs:
   - item: ration
-    quantity: 2
+    quantity: 6
   requires:
   - capability: cooking
     min_level: 0.15
@@ -30,9 +40,11 @@ recipes:
     quantity: 1
   - item: salt
     quantity: 1
+  - item: water
+    quantity: 1
   outputs:
   - item: stew
-    quantity: 2
+    quantity: 4
   requires:
   - capability: cooking
     min_level: 0.3

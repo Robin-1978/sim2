@@ -6,6 +6,7 @@ from typing import Any
 
 from ..actions.capacity import check_action_capacity
 from ..actions.institutions import allocation_preflight
+from ..actions.pacing import generated_action_unavailable
 from ..world.context import action_condition_context
 
 
@@ -45,6 +46,8 @@ class ActionAvailabilityMixin:
         a generic refusal.
         """
 
+        if reason := generated_action_unavailable(self.store, action, agent):
+            return reason
         resource_parameters = (action.get("parameter_defaults", {}) or {})
         resource_key = next((key for key, value in resource_parameters.items() if value == "first_available_resource"), None)
         if resource_key and parameters.get(resource_key) in {None, "", "context.resource_tag"}:

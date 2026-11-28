@@ -11,6 +11,7 @@ import yaml
 from ..actions.conditions import ConditionEngine
 from ..evolution.config import normalize_evolution_config
 from ..persistence.store import WorldStore, config_hash
+from ..world.action_tools import validate_tool_duration
 from ..world.lifecycle import validate_incapacitation_rule
 from ..world.player_template import PlayerTemplateError, parse_player_template
 from ..world.definition_compiler import EFFECT_TYPES
@@ -443,11 +444,7 @@ def world_package_template(config_dir: Path, *, include_artwork: bool = True) ->
         value = load_yaml(config_dir, filename, {}).get(key, [])
         return [dict(item) for item in value] if isinstance(value, list) else []
 
-    prompts: dict[str, Any] = {}
-    prompt_dir = config_dir / "prompts"
-    if prompt_dir.is_dir():
-        for prompt_path in sorted(prompt_dir.glob("*.yaml")):
-            prompts[prompt_path.stem] = load_yaml(prompt_dir, prompt_path.name, {})
+    prompts = _package_prompts(config_dir)
     behavior_trees = collection("behavior_trees.yaml", "behavior_trees")
     behavior_trees = collection("core_behavior_trees.yaml", "behavior_trees") + behavior_trees
     return {
@@ -746,6 +743,8 @@ def validate_config(config_dir: Path) -> dict[str, Any]:
             continue
         if error := validate_day_phase_duration(action, setting):
             errors.append(error)
+        if error := validate_tool_duration(action):
+            errors.append(error)
         for parameter in (action.get("parameters") or {}).values():
             if isinstance(parameter, dict) and parameter.get("entity_ref") and parameter["entity_ref"] not in known_entities:
                 errors.append(f"action {action.get('id')} references unknown entity {parameter['entity_ref']}")
@@ -825,6 +824,11 @@ def validate_config(config_dir: Path) -> dict[str, Any]:
             errors.append(str(exc))
 
     return {"valid": not errors, "errors": errors, "manifest": manifest}
+
+
+def _package_prompts(config_dir: Path) -> dict[str, Any]:
+    directory = config_dir / "prompts"
+    return {path.stem: load_yaml(directory, path.name, {}) or {} for path in sorted(directory.glob("*.yaml"))}
 
 
 def create_instance(config_dir: Path, instance_id: str, runtime_root: Path | None = None) -> Path:
@@ -943,17 +947,7 @@ def create_instance(config_dir: Path, instance_id: str, runtime_root: Path | Non
                     store.repositories.memory.put_knowledge_fact(agent["id"], fact_key, fact_data)
             schedule = evolution.get("evolution", evolution).get("schedule", {}) if isinstance(evolution, dict) else {}
             for agent in load_yaml(config_dir, "agents.yaml", {}).get("agents", []):
-                agent_id = agent["id"]
-                reflection_cadence = int(schedule.get("agent_reflection_minutes", 0) or 0)
-                innovation_cadence = int(schedule.get("agent_innovation_minutes", 0) or 0)
-                controller = str(agent.get("controller") or "llm").casefold()
-                if controller in {"bt", "bt_only", "behavior_tree"}:
-                    reflection_cadence = 0
-                    innovation_cadence = 0
-                if reflection_cadence > 0:
-                    store.repositories.evolution.put_evolution_task(f"reflection:{agent_id}", "agent_reflection", agent_id, "daily_reflection", reflection_cadence, reflection_cadence)
-                if innovation_cadence > 0:
-                    store.repositories.evolution.put_evolution_task(f"innovation:{agent_id}", "agent_reflection", agent_id, "weekly_innovation", innovation_cadence, innovation_cadence)
+                store.repositories.evolution.sync_resident_cadence(agent, 0, schedule)
             for task_type, role, key in [
                 ("god_local", "god", "god_local_minutes"),
                 ("god_structural", "god", "god_structural_minutes"),
@@ -978,10 +972,8 @@ def create_instance(config_dir: Path, instance_id: str, runtime_root: Path | Non
                     definitions = list(load_yaml(config_dir, "core_behavior_trees.yaml", {}).get("behavior_trees", []) or []) + list(definitions)
                 for definition in definitions:
                     store.repositories.entities.put_definition(table, definition["id"], definition)
-            prompt_dir = config_dir / "prompts"
-            if prompt_dir.is_dir():
-                for prompt_path in sorted(prompt_dir.glob("*.yaml")):
-                    store.repositories.memory.put_prompt(prompt_path.stem, yaml.safe_load(prompt_path.read_text(encoding="utf-8")) or {})
+            for role, prompt in _package_prompts(config_dir).items():
+                store.repositories.memory.put_prompt(role, prompt)
             for event in load_yaml(config_dir, "opening_events.yaml", {}).get("opening_events", []):
                 minute = int(event.get("world_minute", event.get("minute", 0)))
                 store.repositories.events.append_event(event["type"], None, minute, event.get("payload", {}))
@@ -1143,6 +1135,11 @@ def upgrade_instance(config_dir: Path, db_path: Path) -> dict[str, Any]:
         next_setting.update(instance_setting)
         fingerprint = config_hash(config_dir, artwork)
         next_evolution = normalize_evolution_config(load_yaml(config_dir, "evolution.yaml", {"roles": {}}) or {"roles": {}})
+        attribute_labels = {
+            item["id"]: item["label"]
+            for item in load_yaml(config_dir, "attributes.yaml", {}).get("attributes", [])
+            if item.get("label")
+        }
         counts: dict[str, int] = {}
         with store.transaction():
             store.repositories.activity.snapshot_active_definitions()
@@ -1150,6 +1147,14 @@ def upgrade_instance(config_dir: Path, db_path: Path) -> dict[str, Any]:
             if "ui" in instance_setting:
                 store.repositories.artwork.replace(artwork_blobs)
             store.repositories.metadata.set("rules", next_rules)
+            attributes = store.repositories.metadata.get("attributes", []) or []
+            store.repositories.metadata.set("attributes", [
+                {**attr, "label": attribute_labels[attr["id"]]} if attr.get("id") in attribute_labels else attr
+                for attr in attributes
+            ])
+            store.repositories.metadata.set("story", load_yaml(config_dir, "story.yaml", {}))
+            for role, prompt in _package_prompts(config_dir).items():
+                store.repositories.memory.put_prompt(role, prompt)
             properties = dict(store.repositories.metadata.get("world_properties", {}) or {})
             configured_state = load_yaml(config_dir, "world_state.yaml", {}).get("world_state", {}) or {}
             for key, value in (configured_state.get("properties") or {}).items():
@@ -1160,6 +1165,17 @@ def upgrade_instance(config_dir: Path, db_path: Path) -> dict[str, Any]:
                     store.repositories.entities.get_entity(resource["id"])
                 except KeyError:
                     store.repositories.entities.put_entity(resource["id"], "resource", resource.get("name", resource["id"]), resource)
+            for obj in load_yaml(config_dir, "objects.yaml", {}).get("objects", []):
+                try:
+                    existing = store.repositories.entities.get_entity(obj["id"])
+                except KeyError:
+                    store.repositories.entities.put_entity(obj["id"], obj.get("type", "object"), obj.get("name", obj["id"]), obj)
+                else:
+                    if obj.get("facility") and existing["entity_type"] == "facility":
+                        store.repositories.entities.put_entity(
+                            obj["id"], existing["entity_type"], existing["name"],
+                            {**existing, "facility": obj["facility"]},
+                        )
             schedule = {}
             minute = int(store.repositories.metadata.get("world_minute", 0) or 0)
             if next_evolution is not None:
@@ -1206,14 +1222,9 @@ def upgrade_instance(config_dir: Path, db_path: Path) -> dict[str, Any]:
                         str(existing_agent.get("name") or agent_id),
                     )
                     agents_updated += 1
-                if next_evolution is not None:
-                    llm_controlled = str(existing_agent.get("controller") or "llm").casefold() == "llm"
-                    for prefix, task_type, key in (
-                        ("reflection", "daily_reflection", "agent_reflection_minutes"),
-                        ("innovation", "weekly_innovation", "agent_innovation_minutes"),
-                    ):
-                        cadence = int(schedule.get(key, 0)) if llm_controlled else 0
-                        store.repositories.evolution.sync_recurring_task(f"{prefix}:{agent_id}", "agent_reflection", agent_id, task_type, minute, cadence)
+            if next_evolution is not None:
+                for agent in store.repositories.entities.list_agents():
+                    store.repositories.evolution.sync_resident_cadence(agent, minute, schedule)
             counts["agents_updated"] = agents_updated
             player_template = load_yaml(config_dir, "player_template.yaml", {})
             template_behaviors = [

@@ -15,6 +15,7 @@ import re
 from typing import Any, Iterator
 
 from ..dsl.expressions import ExpressionSyntaxError, parse_expression
+from .action_tools import validate_tool_duration
 
 
 DEFINITION_TYPES: tuple[str, ...] = (
@@ -77,8 +78,38 @@ def _validate_parameter_specs(parameters: Any, errors: list[str]) -> None:
             errors.append(f"action.parameters.{parameter_name} must declare a supported type")
 
 
+def bind_legacy_inventory_effect(
+    effect: dict[str, Any], declarations: dict[str, Any], parameters: dict[str, Any]
+) -> dict[str, Any]:
+    """Read the parameter pair found in inventory effects in older saves."""
+    if (effect.get("type") or effect.get("op")) not in {"inventory_add", "inventory_remove", "inventory.consume_item"}:
+        return effect
+    item_ref = effect.get("item_id")
+    quantity_key = effect.get("quantity_parameter")
+    if (not isinstance(item_ref, str) or not item_ref.startswith("context.")
+            or not isinstance(quantity_key, str) or not quantity_key
+            or any(key in effect for key in ("item", "amount", "quantity"))):
+        return effect
+    item_key = item_ref.removeprefix("context.")
+    if item_key not in declarations or quantity_key not in declarations:
+        return effect
+    item, quantity = parameters.get(item_key), parameters.get(quantity_key)
+    if not isinstance(item, str) or not item.strip() or item.startswith("context.") or not _is_number(quantity) or quantity <= 0:
+        return effect
+    bound = dict(effect)
+    del bound["item_id"], bound["quantity_parameter"]
+    return {**bound, "item": item, "quantity": quantity}
+
+
 def effect_payload_error(effect: dict[str, Any], field: str = "effects") -> str | None:
     effect_type = effect.get("type") or effect.get("op")
+    if effect_type in {"inventory_add", "inventory_remove", "inventory.consume_item"}:
+        quantity = effect.get("quantity", effect.get("amount", 1))
+        if (not str(effect.get("item") or "").strip() or "quantity_parameter" in effect
+                or not (_is_number(quantity) and quantity > 0 or isinstance(quantity, str) and quantity.startswith("context."))):
+            return f"{effect_type} requires item and a positive quantity or context.<quantity parameter>"
+    if effect_type == "relationship_delta" and any(key in effect for key in ("from", "to", "relationship_type")):
+        return "relationship_delta changes the executing character's relation; use target_id and relation"
     if effect_type == "entity_state_set":
         entity = effect.get("entity_id") or effect.get("target_entity")
         state = effect.get("state") or effect.get("property")
@@ -209,6 +240,13 @@ def compile_definition_shape(
             for section in ("reserve", "per_minute", "on_success", "on_failure", "refund"):
                 if section in costs and not isinstance(costs[section], dict):
                     errors.append(f"action.costs.{section} must be an object")
+            reserve = costs.get("reserve", {})
+            if isinstance(reserve, dict):
+                parameters = definition.get("parameters") or {}
+                for key in ("item_parameter", "item_quantity_parameter"):
+                    if key in reserve and (not isinstance(parameters, dict) or not isinstance(reserve[key], str)
+                                           or reserve[key] not in parameters):
+                        errors.append(f"action.costs.reserve.{key} must name a declared action parameter")
         _validate_parameter_specs(definition.get("parameters"), errors)
         for field in ("success", "failure"):
             if isinstance(definition.get(field), list) and len(definition[field]) == 1 and isinstance(definition[field][0], dict):
@@ -218,6 +256,8 @@ def compile_definition_shape(
             errors.append("action.duration must declare minutes or a supported mode")
         if duration.get("mode") == "until_day_phase" and not (isinstance(duration.get("phase"), str) and duration["phase"].strip()):
             errors.append("action.duration.phase must name a configured calendar phase")
+        if error := validate_tool_duration(definition):
+            errors.append(error)
         if _is_number(duration.get("minutes")) and float(duration["minutes"]) <= 0:
             errors.append("action.duration.minutes must be positive")
         for field in ("preconditions", "effects", "progress_effects"):

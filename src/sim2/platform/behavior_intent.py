@@ -12,6 +12,7 @@ from dataclasses import dataclass, field
 from functools import partial
 from typing import Any
 
+from ..actions.pacing import generated_action_unavailable
 from ..behavior.estimator import BehaviorDurationEstimator
 from ..behavior.recovery import failure_block_recovered
 from ..intents.models import BehaviorIntent
@@ -302,6 +303,18 @@ class BehaviorIntentService(PlatformService):
             submission.plan = self._context.services["execution"].compile_behavior_actions(submission.behavior_id)
         except ValueError as error:
             return {"status": "rejected", "message": str(error), "failed_check": "behavior_plan", "retryable": False}
+        # A caller supplying explicit parameters may bypass the catalog. Check
+        # the first required Action before opening the activity. Later steps
+        # and conditional branches are checked on their execution path.
+        if submission.plan:
+            first = submission.plan[0]
+            if "action_id" in first and "on_failure" not in first:
+                reason = generated_action_unavailable(
+                    self.store, first.get("definition_snapshot") or {}, submission.agent, submission.world_minute,
+                )
+                if reason:
+                    return {"status": "rejected", "message": reason, "failed_check": "action_pacing",
+                            "retryable": reason.startswith("cooldown until")}
         submission.remaining_minutes = self._estimate_minutes(submission)
         self._record_revisions(submission)
         return self._check_agent_revision(submission)
@@ -708,6 +721,7 @@ class BehaviorIntentService(PlatformService):
             {item["id"]: item for item in self.store.repositories.entities.get_definitions("recipe_def")},
             self._context.services["execution"].route_distance,
             capabilities=agent.get("capabilities", {}),
+            inventory=agent.get("inventory", {}),
             capability_modifiers=(self.store.repositories.metadata.get("rules", {}) or {}).get("capability_modifiers", {}),
             travel_speed=lambda values: movement_speed(self.store, agent, values),
             phase_duration=partial(day_phase_duration, self.store),

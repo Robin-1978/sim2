@@ -7,6 +7,8 @@ are validated and recorded the same way but only seed new instances.
 
 from __future__ import annotations
 
+import json
+from math import isfinite
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
@@ -155,11 +157,21 @@ class WorldChangesRuntimeMixin:
         if not source or not target:
             raise _ChangeRejected({"status": "rejected", "message": "relationship from and to are required.", "failed_check": "relationship", "retryable": True})
         existing = self.store.connection.execute(
-            "SELECT 1 FROM relationship WHERE from_id=? AND to_id=? AND relation_type=?",
+            "SELECT data_json FROM relationship WHERE from_id=? AND to_id=? AND relation_type=?",
             (source, target, relation_type),
         ).fetchone()
         submission.relationship_created = existing is None
-        self.store.repositories.entities.put_relationship(str(source), str(target), relation_type, relation)
+        current = json.loads(existing["data_json"]) if existing else {}
+        if "delta" in relation:
+            delta = relation.pop("delta")
+            before = current.get("relation_strength", current.get("strength", current.get("value", 0)))
+            if (type(before) not in (int, float) or type(delta) not in (int, float)
+                    or not isfinite(before) or not isfinite(delta) or "relation_strength" in relation or "strength" in relation):
+                raise _ChangeRejected({"status": "rejected", "failed_check": "relationship.delta", "retryable": True,
+                                       "message": "Use a finite relationship delta with a numeric baseline, or set an absolute strength."})
+            relation["relation_strength"] = max(-1.0, min(1.0, before + delta))
+            current.pop("delta", None)
+        self.store.repositories.entities.put_relationship(str(source), str(target), relation_type, {**current, **relation})
         return {"relationship": {"from": str(source), "to": str(target), "type": relation_type, **relation}}
 
     def _apply_faction(self, proposal: dict[str, Any]) -> dict[str, Any]:

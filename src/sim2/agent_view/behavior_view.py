@@ -10,6 +10,7 @@ from typing import Any
 from ..behavior.estimator import BehaviorDurationEstimator
 from ..behavior.plan import compile_behavior_plan
 from ..behavior.recovery import failure_block_recovered
+from ..world.action_tools import best_time_tool
 from ..world.navigation import (
     configured_location_tags,
     movement_speed,
@@ -347,6 +348,7 @@ class BehaviorViewMixin:
         simulated_state = sim.agent.setdefault("initial_state", {})
         simulated_state.pop("last_action_result", None)
         frame.estimator.capabilities = sim.agent.get("capabilities", {}) or {}
+        frame.estimator.inventory = sim.agent.get("inventory", {}) or {}
         try:
             plan = compile_behavior_plan(bt_id, frame.bt_defs, frame.action_defs)
         except ValueError as error:
@@ -388,7 +390,10 @@ class BehaviorViewMixin:
             else:
                 index += 1
         if sim.unavailable:
-            frame.diagnostics.append({"behavior_id": bt_id, "failed": [f"Action {sim.unavailable_action} cannot start: {sim.unavailable_reason}"]})
+            reason = sim.unavailable_reason or ""
+            if not reason.startswith("cooldown until"):
+                reason = f"Action {sim.unavailable_action} cannot start: {reason}"
+            frame.diagnostics.append({"behavior_id": bt_id, "failed": [reason]})
             return None
         if not sim.steps:
             if not condition_checked:
@@ -468,6 +473,14 @@ class BehaviorViewMixin:
                 action_for_view = copy.deepcopy(action)
                 action_for_view.setdefault("progress", {})["required"] = required
         view = action_view(action_for_view, recipe, parameters)
+        tool = best_time_tool(action, parameters, estimator.inventory)
+        if tool:
+            base_minutes = estimator._action_minutes(
+                action, parameters, simulated_state.get("location_id"),
+                elapsed_minutes=sim.elapsed_minutes, use_tools=False,
+            )
+            if base_minutes > action_minutes:
+                impacts.insert(0, f"Tool {tool[0]} saves {base_minutes - action_minutes} minutes")
         steps.append(view["name"])
         costs.extend(view["cost"])
         impacts.extend(view["impact"][:3])
@@ -578,6 +591,13 @@ class BehaviorViewMixin:
             recipe_options = []
             location_tags = set(frame.current_location.get("tags") or [])
             inventory = frame.agent.get("inventory", {}) or {}
+            item_labels = (self.store.repositories.metadata.get("rules", {}) or {}).get("item_labels") or {}
+
+            def quantities(items: list[dict[str, Any]]) -> str:
+                return "、".join(
+                    f"{item_labels.get(record['item'], record['item'])}×{record.get('quantity', 1)}"
+                    for record in items if isinstance(record, dict) and record.get("item")
+                )
             for recipe in self.entities_repo.get_definitions("recipe_def"):
                 station_tags = set(recipe.get("station_tags") or [])
                 if station_tags and not station_tags & location_tags:
@@ -591,9 +611,11 @@ class BehaviorViewMixin:
                 ):
                     continue
                 label = str(recipe.get("name") or recipe.get("id"))
-                costs = ", ".join(f"{item.get('item')}×{item.get('quantity', 1)}" for item in inputs if isinstance(item, dict))
+                costs = quantities(inputs)
+                outputs = quantities(recipe.get("outputs") or [])
+                trade = f"{costs} → {outputs}" if costs else outputs
                 recipe_options.append({
-                    "name": f"{label}（{costs}，{recipe.get('duration_minutes', 0)} 分钟）" if costs else label,
+                    "name": f"{label}（{trade}，{recipe.get('duration_minutes', 0)} 分钟）" if trade else label,
                     "value": str(recipe.get("id") or ""),
                 })
             if recipe_options:

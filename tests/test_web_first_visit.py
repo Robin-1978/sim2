@@ -1,6 +1,6 @@
 """Player-facing checks at actual desktop and phone viewport sizes."""
 
-from contextlib import contextmanager
+from contextlib import closing, contextmanager
 from pathlib import Path
 from shutil import which
 from threading import Thread
@@ -8,6 +8,7 @@ from threading import Thread
 import pytest
 
 from sim2.api.http import ControlHTTPServer
+from sim2.api.service import ControlService
 from sim2.bootstrap.service import create_instance
 
 pw = pytest.importorskip("playwright.sync_api")
@@ -35,6 +36,62 @@ def server_url(tmp_path: Path, database: Path | None = None):
         finally:
             server.shutdown()
             thread.join()
+
+
+def test_copper_pick_bonus_appears_on_the_mining_card(tmp_path, browser):
+    db = create_instance(WORLDS / "windward_skyfall", "tool-card", tmp_path)
+    with closing(ControlService(db)) as service:
+        platform = service.platform
+        assert platform.enter_player("hero", "mechanic", name="林晚")["status"] == "accepted"
+        with platform.store.transaction():
+            entities = platform.store.repositories.entities
+            player = entities.get_agent("hero")
+            player["initial_state"]["location_id"] = "copper_tide"
+            player["inventory"]["copper_pick"] = 1
+            entities.put_agent("hero", player, "林晚")
+    with server_url(tmp_path, db) as url:
+        page = browser.new_page()
+        try:
+            page.goto(url, wait_until="domcontentloaded")
+            page.locator("#entry-continue button").click()
+            pw.expect(page.get_by_text("铜镐省 36 分钟", exact=True)).to_be_visible()
+            card = page.locator(".action-row, .recommended-card").filter(
+                has=page.get_by_text("铜镐省 36 分钟", exact=True),
+            )
+            pw.expect(card).to_contain_text("采铜")
+            pw.expect(card).to_contain_text("54 分钟")
+        finally:
+            page.close()
+
+
+def test_open_voyage_recommends_rest_for_the_actual_low_stat(tmp_path, browser):
+    db = create_instance(WORLDS / "windward_skyfall", "open-voyage-low-energy", tmp_path)
+    with closing(ControlService(db)) as service:
+        platform = service.platform
+        platform.enter_player("hero", "mechanic", name="林晚")
+        with platform.store.transaction():
+            store = platform.store
+            player = store.repositories.entities.get_agent("hero")
+            player["initial_state"]["stamina"] = 6
+            store.repositories.entities.update_agent("hero", player)
+            world = store.repositories.metadata.get("world_properties")
+            world.update(dawn_salvage=1, ending_trigger=1, voyage_phase=2)
+            store.repositories.metadata.set("world_properties", world)
+            store.repositories.events.append_event("skyfall.launched", "hero", 0, {})
+    with server_url(tmp_path, db) as url:
+        page = browser.new_page(viewport={"width": 390, "height": 844})
+        try:
+            page.goto(url, wait_until="domcontentloaded")
+            page.locator("#entry-continue button").click()
+            page.get_by_role("button", name="继续航行").click()
+            pw.expect(page.locator("#ending-overlay")).to_be_hidden()
+            stats = page.locator("#summary-stats")
+            pw.expect(stats.locator(".low")).to_have_text("精力6%")
+            pw.expect(stats).to_contain_text("健康")
+            pw.expect(stats).to_contain_text("饱食")
+            pw.expect(page.locator("#recommended-action")).to_contain_text("在营地休息")
+        finally:
+            page.close()
 
 
 @pytest.mark.parametrize(("width", "height"), [(390, 844), (1366, 900)])
@@ -78,5 +135,75 @@ def test_scene_badges_and_cards_share_the_world_thresholds(tmp_path, browser):
                 for label, level in [("风暴压力", storm_level), ("船体", hull_level)]:
                     pw.expect(tags.locator(f".badge.{level}", has_text=label)).to_have_count(1)
                     pw.expect(page.locator(f".crisis-metric.{level}", has_text=label)).to_have_count(1)
+            page.evaluate("""async () => {
+                const {state} = await import('/js/core.js');
+                const {renderCharacter} = await import('/js/render_character.js');
+                state.view.ui.player_summary_attributes = ["hydration", "integrity"];
+                renderCharacter();
+            }""")
+            assert page.locator("#summary-stats dt").all_text_contents() == ["水分", "健康"]
+        finally:
+            page.close()
+
+
+@pytest.mark.parametrize(("width", "height"), [(375, 667), (390, 844), (1366, 900)])
+def test_game_navigation_keeps_the_player_and_current_choice(tmp_path, browser, width, height):
+    db = create_instance(WORLDS / "windward_skyfall", "field-book", tmp_path)
+    with server_url(tmp_path, db) as url:
+        page = browser.new_page(viewport={"width": width, "height": height})
+        try:
+            page.goto(url, wait_until="domcontentloaded")
+            page.locator("#entry-name").fill("岚")
+            page.locator(".origin-card", has_text="制图师").click()
+            page.locator("#entry-submit").click()
+            nav = page.get_by_role("navigation", name="游戏画面")
+            choice = page.locator("#opportunity-choices button").first
+            pw.expect(choice).to_be_visible()
+            summary = page.get_by_role("region", name="我的角色")
+            pw.expect(summary.locator("#summary-name")).to_have_text("岚")
+            pw.expect(summary.locator("#summary-origin")).to_have_text("制图师 · 灯岬")
+            pw.expect(summary.locator("#summary-goal")).to_contain_text("旧灯塔")
+            assert summary.locator("dt").all_text_contents() == ["健康", "精力", "水分", "饱食"]
+            assert all(summary.locator("dd").all_text_contents())
+            first_choice = choice.bounding_box()
+            footer = page.locator(".mobile-action-bar").bounding_box()
+            assert first_choice["y"] + first_choice["height"] <= (footer["y"] if footer else height)
+            bag = summary.get_by_role("button", name="行囊")
+            bag.click()
+            pw.expect(page.locator("#player-sheet-name")).to_have_text("岚")
+            pw.expect(page.locator("#inventory-grid .inventory-item").first).to_be_visible()
+            page.keyboard.press("Escape")
+            pw.expect(bag).to_be_focused()
+            nav.get_by_role("button", name="角色").click()
+            pw.expect(page.locator("#player-name")).to_be_visible()
+            pw.expect(page.locator("#player-role")).to_have_text("制图师")
+            pw.expect(choice).to_be_hidden()
+            nav.get_by_role("button", name="纪事").click()
+            page.locator("#right-tabs [data-tab=talk]").click()
+            pw.expect(page.locator("#tab-talk")).to_be_visible()
+            nav.get_by_role("button", name="探索").focus()
+            page.keyboard.press("Enter")
+            pw.expect(choice).to_be_visible()
+            pw.expect(nav.get_by_role("button", name="探索")).to_have_attribute("aria-pressed", "true")
+            map_requests = []
+            page.route("**/api/v1/map?**", lambda route: map_requests.append(route))
+            page.locator("#open-map").click()
+            pw.expect(page.locator("#map-dialog")).to_be_visible()
+            page.keyboard.press("Escape")
+            pw.expect(page.locator("#map-dialog")).to_be_hidden()
+            with page.expect_response(lambda response: "/api/v1/map?" in response.url):
+                map_requests[0].continue_()
+            page.evaluate("() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))")
+            pw.expect(page.locator("#map-dialog")).to_be_hidden()
+            pw.expect(choice).to_be_visible()
+            assert page.evaluate("document.documentElement.scrollWidth") == width
+            page.unroute("**/api/v1/map?**")
+            bag_before = bag.inner_text()
+            page.locator("#opportunity-choices").get_by_role("button", name="吊起铜料").click()
+            pw.expect(bag).not_to_have_text(bag_before, timeout=15000)
+            updated_bag = bag.inner_text()
+            page.reload(wait_until="domcontentloaded")
+            pw.expect(summary.locator("#summary-origin")).to_have_text("制图师 · 灯岬", timeout=30000)
+            pw.expect(bag).to_have_text(updated_bag)
         finally:
             page.close()

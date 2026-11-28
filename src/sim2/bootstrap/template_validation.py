@@ -13,6 +13,7 @@ from typing import Any
 
 from ..actions.conditions import ConditionEngine
 from ..behavior.plan import compile_behavior_plan, wait_minutes
+from ..world.action_tools import validate_tool_duration
 from ..world.lifecycle import validate_incapacitation_rule
 from ..dsl.expressions import parse_expression, reference_paths
 from ..world.definition_compiler import EFFECT_TYPES, action_conditions, condition_syntax_error, effect_payload_error
@@ -384,6 +385,8 @@ class _TemplateChecks:
             ) and str(duration.get("mode") or "") not in {"route_distance", "recipe", "recipe_duration", "until_day_phase"}:
                 errors.append(f"action {action.get('id')} duration needs non-negative minutes or a supported mode")
             if error := validate_day_phase_duration(action, self.world or {}):
+                errors.append(error)
+            if error := validate_tool_duration(action):
                 errors.append(error)
             for field, condition in action_conditions(action):
                 self.check_expression(condition, f"action {action.get('id')}.{field}", result_contract=field.endswith(".condition"))

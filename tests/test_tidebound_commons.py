@@ -753,6 +753,11 @@ def test_emergent_story_chapter_takes_precedence_over_situation_anchors(tmp_path
                     "audience": ["hero"],
                 },
             )
+            for i in range(30):
+                platform.store.repositories.events.append_event(
+                    "story.beat.activated", "story", 7 + i,
+                    {"beat_id": f"private_{i}", "audience": ["another_resident"]},
+                )
         chapter = service.player_view("hero")["chapter"]
         assert chapter["kind"] == "story"
         assert chapter["title"] == "半张海图有回应"

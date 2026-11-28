@@ -11,10 +11,14 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from sim2.bootstrap.service import create_instance
 from sim2.evolution.config import normalize_evolution_config
 from sim2.intents.models import BehaviorIntent
 from sim2.platform.runtime import Platform
+from sim2.prompting.sections_god import _season_plan_lines
+from sim2.prompting.sections_story import story_lines
 from sim2.simulation.runner import SimulationRunner
 
 WORLD = Path(__file__).parents[1] / "worlds" / "three_lanterns_town"
@@ -44,6 +48,53 @@ def _platform(tmp_path: Path, name: str, policy: str = "llm") -> Platform:
     return platform
 
 
+@pytest.mark.parametrize(("source_is_visible", "choice", "recorded_choice"), [
+    (True, "Unload food now or wait for the crew", "Unload food now or wait for the crew"),
+    (True, {"option_a": "Unload food", "option_b": "Hold the berth", "tradeoff": "Food or crew access"},
+     "Unload food / Hold the berth / Food or crew access"),
+    (True, {"option_a": "Unload food", "option_b": "Hold the berth"}, None),
+    (False, "Unload food now or wait for the crew", None),
+])
+def test_director_wakes_story_only_from_a_grounded_mainline(
+    tmp_path: Path, source_is_visible: bool, choice: str | dict, recorded_choice: str | None,
+) -> None:
+    platform = _platform(tmp_path, "mainline-director")
+    try:
+        store = platform.store
+        with store.transaction():
+            store.repositories.metadata.set("evolution", normalize_evolution_config({
+                "director": {"cadence": 1, "policy": "llm", "targets": ["place"],
+                             "context_events": ["port.opened"], "narrative_direction": True},
+                "wakes": [{"id": "director_story", "on": "director.plan.started", "for": "story",
+                           "tools": ["query_history", "propose_story_beat", "wait"], "external": True}],
+            }))
+            fact_id = store.repositories.events.append_event("port.opened", "captain", 0, {"summary": "East dock opened"})
+        mainline = {"source_event_id": fact_id if source_is_visible else fact_id + 1,
+                    "objective": "Decide who can use the new dock",
+                    "player_choice": choice}
+
+        class Provider:
+            def complete_json(self, *, system, context):
+                assert "East dock opened" in context and "player_choice" in context
+                return {"target_cell": "place", "reason": "Give the dock a purpose", **mainline}
+
+        plan = platform.plan_structure_with_provider(Provider(), 1)
+        if recorded_choice is None:
+            assert "mainline" not in plan
+            assert not store.repositories.events.recent_events_by_types(["director.plan.started"])
+            return
+        mainline["player_choice"] = recorded_choice
+        assert plan["mainline"] == mainline
+        assert store.repositories.metadata.get("season_plan_history")[plan["plan_id"]]["mainline"] == mainline
+        assert any(task["task_type"] == "event_group:director_story" for task in platform.ready_evolution_tasks())
+        (event,) = store.repositories.events.recent_events_by_types(["director.plan.started"])
+        assert event["source_event_id"] == fact_id
+        for prompt in (story_lines({"season_plan": plan}), _season_plan_lines({"season_plan": plan})):
+            assert any(mainline["player_choice"] in line for line in prompt)
+    finally:
+        platform.close()
+
+
 def test_runner_asks_the_llm_director_before_the_tick(tmp_path: Path) -> None:
     platform = _platform(tmp_path, "auto-director")
     provider = _Director("rule")
@@ -60,6 +111,32 @@ def test_runner_asks_the_llm_director_before_the_tick(tmp_path: Path) -> None:
         # The Director receives targets and counts, not world content.
         assert "place=" in provider.contexts[0] and "rule=" in provider.contexts[0]
         assert "Lantern" not in provider.contexts[0]
+    finally:
+        platform.close()
+
+
+def test_stage_event_replaces_an_active_plan_before_the_director_cadence(tmp_path: Path) -> None:
+    platform = _platform(tmp_path, "replan-on-stage-event")
+    try:
+        store = platform.store
+        with store.transaction():
+            store.repositories.metadata.set("evolution", normalize_evolution_config({
+                "director": {"cadence": 30, "policy": "llm", "targets": ["place", "rule"],
+                             "context_events": ["voyage.opened"], "replan_on": ["voyage.opened"]},
+            }))
+            store.repositories.metadata.set("world_minute", 30)
+        first = platform.plan_structure_with_provider(_Director("place"), 30)
+        with store.transaction():
+            store.repositories.metadata.set("world_minute", 31)
+            event = store.repositories.events.append_event("voyage.opened", None, 31, {"summary": "A new passage opened"})
+        provider = _Director("rule")
+        new_plan = platform.plan_structure_with_provider(provider, 31)
+        assert new_plan["created_minute"] == 31 and new_plan["event_cursor"] >= event
+        old_plan = store.repositories.metadata.get("season_plan_history")[first["plan_id"]]
+        assert old_plan["closure_reason"] == "world stage changed" and old_plan["replan_event_id"] == event
+        assert "A new passage opened" in provider.contexts[0]
+        assert platform.plan_structure_with_provider(provider, 32) is None
+        assert provider.calls == 1
     finally:
         platform.close()
 
@@ -120,6 +197,12 @@ def test_budget_exhausted_structural_retry_fits_the_plan_window(tmp_path: Path) 
             {"failed_check": "budget_exhausted"},
         )
         assert capped == 1
+        # Windward's saved plan had 2 minutes left after 11 exhausted sessions.
+        # The configured 30-minute interval gives the Director time to replace it.
+        runner.director_cadence_minutes = 30
+        repeated = {"retry_count": 11, "data": {"season_plan": tight}}
+        assert runner._evolution_retry_delay(repeated, {"failed_check": "budget_exhausted"}) == 30
+        assert runner._evolution_retry_delay({"data": {"season_plan": tight}}, {"failed_check": "budget_exhausted"}) == 1
         semantic = runner._evolution_retry_delay(task, {"failed_check": "tool_arguments"})
         assert semantic == 5
     finally:
@@ -233,3 +316,42 @@ def test_rule_evaluator_honors_commit_order_deadline_and_legacy_completion(tmp_p
         assert observed["observed"]["outcome_event_id"] == in_window and in_window != later
     finally:
         platform.close()
+
+
+def test_director_reads_configured_history_from_its_own_save(tmp_path):
+    for name in ("east-port", "west-port"):
+        platform = _platform(tmp_path, name)
+        try:
+            with platform.store.transaction():
+                metadata = platform.store.repositories.metadata
+                metadata.set("evolution", normalize_evolution_config({
+                    "director": {"cadence": "1m", "policy": "llm", "targets": ["place"],
+                                 "context_events": ["port.opened"], "context_residents": 2},
+                }))
+                events = platform.store.repositories.events
+                events.append_event("port.opened", "captain", 0, {"summary": name})
+                for i in range(12):
+                    events.append_event("noise", None, 0, {"summary": f"irrelevant-{i}"})
+            provider = _Director()
+            platform.plan_structure_with_provider(provider, 1)
+            prompt = provider.contexts[0]
+            assert name in prompt and "captain" in prompt and "port.opened" in prompt
+            residents = json.loads(prompt.split("existing options. ", 1)[1].split(" Last completed:", 1)[0])
+            assert len(residents) == 2
+            assert all(resident["name"] and resident["location"] for resident in residents)
+            assert "irrelevant" not in prompt
+            assert ("west-port" if name == "east-port" else "east-port") not in prompt
+            # Closing an unused proposal changes the next model brief, even after reopening.
+            with platform.store.transaction():
+                plan = metadata.get("season_plan")
+                plan.update(status="expired", closure_reason="registered content has no verified use")
+                metadata.set("season_plan", plan)
+                metadata.set("season_plan_history", {plan["plan_id"]: plan})
+            path = tmp_path / "runtime" / "instances" / name / "world.sqlite3"
+            platform.close()
+            platform = Platform(path)
+            platform.plan_structure_with_provider(provider, 2)
+            assert "registered content has no verified use" in provider.contexts[-1]
+            assert "expired" in provider.contexts[-1]
+        finally:
+            platform.close()
