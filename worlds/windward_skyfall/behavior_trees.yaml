@@ -2297,7 +2297,7 @@ behavior_trees:
   description: 采两份可包扎、做药膏或做炖菜的药草。
   entry_conditions: [actor.alive, location.tag.camp, world.garden_level >= 1]
   nodes:
-  - {type: action, action_id: harvest_camp_herbs, parameters: {resource_tag: camp_herbs}}
+  - {type: action, action_id: harvest_camp_herbs, parameters: {resource_tag: camp_herbs, item_id: herb}}
   goal_tags: [gathering, supply]
   drive_tags: [purpose, safety]
 - id: dress_wounds
@@ -2316,6 +2316,6 @@ behavior_trees:
   - location.tag.thunderhead
   - context.day_phase != night or actor.inventory.lantern >= 1
   nodes:
-  - {type: action, action_id: cut_crystal_seam, parameters: {resource_tag: crystal}}
+  - {type: action, action_id: cut_crystal_seam, parameters: {resource_tag: crystal, item_id: crystal}}
   goal_tags: [gathering, supply]
   drive_tags: [purpose, safety]

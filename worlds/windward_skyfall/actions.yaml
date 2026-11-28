@@ -2892,13 +2892,14 @@ actions:
 - id: harvest_camp_herbs
   verb: gather
   description: 从船上的药园采两份药草。石刀可以加快采收。
-  parameters: {resource_tag: string}
+  parameters: {resource_tag: string, item_id: string}
   preconditions:
   - actor.alive
   - location.tag.camp
   - world.garden_level >= 1
   - world.camp_herbs >= 2
   - context.resource_tag == 'camp_herbs'
+  - context.item_id == 'herb'
   duration:
     minutes: 20
     tool_bonuses:
@@ -2910,7 +2911,7 @@ actions:
     on_failure: {}
     refund: {}
   effects:
-  - {type: inventory_add, item: herb, quantity: 2}
+  - {type: inventory_add, item: context.item_id, quantity: 2}
   success: {condition: actor.alive, result: resource_gathered}
   failure: {condition: actor.incapacitated, result: gathering_failed}
 - id: dress_wounds
@@ -2935,12 +2936,13 @@ actions:
 - id: cut_crystal_seam
   verb: gather
   description: 用晶锯一次切下两块晶石，耗时 120 分钟，风暴压力增加 12。
-  parameters: {resource_tag: string}
+  parameters: {resource_tag: string, item_id: string}
   preconditions:
   - actor.alive
   - actor.can_gather
   - location.tag.thunderhead
   - context.resource_tag == 'crystal'
+  - context.item_id == 'crystal'
   - actor.inventory.crystal_saw >= 1
   - world.storm_pressure <= 88
   duration: {minutes: 120}
@@ -2951,7 +2953,7 @@ actions:
     on_failure: {}
     refund: {}
   effects:
-  - {type: inventory_add, item: crystal, quantity: 2}
+  - {type: inventory_add, item: context.item_id, quantity: 2}
   - {type: world_property_delta, property: storm_pressure, delta: 12, maximum: 100, label: 风暴压力}
   success: {condition: resource.collected, result: resource_gathered}
   failure: {condition: actor.incapacitated, result: gathering_failed}
