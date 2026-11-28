@@ -33,6 +33,24 @@ function artPath(value) {
       && /^\/(world-art|catalog-art\/[a-z][a-z0-9_]*)\/[0-9a-f]{64}\.webp$/.test(value) ? value : "";
 }
 
+export function paintAvatar(root, person) {
+    root.textContent = String(person?.name || person?.id || "?").slice(0, 1);
+    const source = artPath(person?.portrait);
+    if (!source) return root;
+    const image = document.createElement("img");
+    image.alt = "";
+    image.hidden = true;
+    image.addEventListener("load", () => {
+      if (image.parentElement !== root) return;
+      root.replaceChildren(image);
+      image.hidden = false;
+    }, { once: true });
+    image.addEventListener("error", () => image.remove(), { once: true });
+    root.append(image);
+    image.src = source;
+    return root;
+}
+
 
 function paintIllustration(root, source, fallback) {
     root.classList.toggle("illustrated", Boolean(source));
@@ -138,7 +156,9 @@ export function renderSceneWorldCover(theme = "harbor", locationId = "", useIllu
     const root = $("scene-world-cover");
     if (!root) return;
     const worldId = state.world?.world_id || state.world?.title || "sim2";
-    const source = artPath(state.view?.ui?.scene_art?.[locationId]);
+    const location = state.view?.location;
+    const source = artPath(state.view?.ui?.scene_art?.[locationId])
+      || (location?.id === locationId ? artPath(location.artwork) : "");
     const cacheKey = `${worldId}|${theme}|${source}`;
     if (useIllustration && root.dataset.world === cacheKey) return;
     root.dataset.world = cacheKey;

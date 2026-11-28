@@ -444,3 +444,16 @@ world-pack lint covers every `worlds/*/actions.yaml`.
 - 实验通过 `scripts/verify_frontier_growth.py --provider remote` 从单一泊位和遇险信号启动，无预写新地点、居民或章节。`frontier-c` 和 `frontier-d` 均在 20 个游戏分钟通过验证。五个角色均调用本机配置的 `deepseek-v4.1-flash`。两档都生成 Kettle Rock Mooring，随后分别生成 Clamp Yard Spur 与 Collar Yard Float，并分别迎来 Dessa Kettle 与 Bosun Halda Vey。玩家走正常入口抵达（事件 23），居民巡查（事件 31），Story 引用巡查信息（事件 28）激活章节（事件 34）。Director 以到达结清计划并开启下一份。重开存档仍能看到本档的新地点和居民。详情见 `artifacts/frontier-growth/frontier-c-summary.json` 和 `artifacts/frontier-growth/frontier-d-summary.json`。
 - `test_god_created_route_respects_authored_travel_gates` 在风脊号新档登记动态地点及带滑翔翼条件的新航行行为。装备前玩家没有可执行航行选项，装备后从真实玩家入口正常抵达。运行时插画、整船迁移及跨港生产、贸易和自治仍待实现与验证。
 - God、Director、演化配置、NPC 演化及 Story 的 44 项回归通过。风脊号动态航线和存档升级的 3 项用例通过。Python 字节码编译与 Git 空白检查通过。
+
+### 2026-11-28 独立运行时插画
+
+- 新增 `sim2 artwork`。可选后台进程只在玩家当前所在的公开地点选择 God 新建的地点和同处居民，由已经配置的 Story 文字模型提炼视觉描述，再向独立 HTTP 绘图服务请求 WebP。服务、模型、尺寸、风格与凭证环境变量均由部署配置提供。游戏与客户端均不依赖 Codex。
+- Platform 用事务争用任务、校验 WebP 并按摘要保存，每个实体发布一张。失败按间隔重试，沿用已获得的描述。交付插画后正常刷新玩家视图，载入失败显示首字徽章或场景底图。断线后重开与世界包升级保留生成资产。定向用例覆盖到达后才触发、非法图像重试、跨进程任务争用、重复调用去重和旧档升级。
+- 在 `frontier-d` 的独立副本用正常 CLI 和本机 `deepseek-v4.1-flash` Story 角色实测。两次取得视觉描述，向本地测试服务发送两个出图请求，第三次为空。测试服务返回固定 WebP，未测试正式绘图模型。真实 Chromium 手机视口显示了场景和 NPC 头像，阻断头像请求时显示首字。机器报告见 `artifacts/frontier-growth/story-art-runtime-proof/report.json`。
+- 在手机视口保持人物面板打开，从另一条进程连接发布图片。客户端经正常的事件流升级场景和人物头像，页面无需重载。图片持久化与重试的 5 项测试、浏览器首屏的 8 项测试均通过，新增模块的 Python 和 JavaScript 语法检查以及 Git 空白检查通过。
+
+### 2026-11-28 插画画质对照与运行成本
+
+- 用已有 Codex 样图做 Kettle Rock 场景对照，并根据存档里的真实 Story 描述生成 Halda Vey 头像。本轮新场景请求遇到网络错误，回放使用同一地点早先由 Story 描述生成的样图。把两张成片转成 WebP，经本地 HTTP 服务和正常 `sim2 artwork` 流程回放。手机与桌面 Chromium 显示了真实样图，人物面板的 52 像素头像清楚，24 像素头像主要保留轮廓。报告见 `artifacts/frontier-growth/story-art-quality/report.json`。
+- 独立绘图配置支持可选的 `quality` 和 `output_compression`，省略时沿用服务默认值。HTTP 回归验证这两个值按配置透传，并拒绝无效设置。图片相关 8 项用例通过，Python 编译与 Git 空白检查通过。
+- OpenCode Go 官方清单未列文生图额度，OpenCode Console 将出图列为按量收费。按用户要求，游戏正常运行采用世界包与现有回退呈现，绘图 worker 保持可选，未配置线上付费绘图模型。

@@ -584,10 +584,12 @@ def build_player_view(platform: Platform, player_id: str) -> dict[str, Any]:
             behavior_id = str((state.get("last_platform_result") or {}).get("behavior_ref") or "").removeprefix("behavior:")
         behavior = bt_defs.get(behavior_id, {})
         label = str(behavior.get("agent_label") or behavior.get("summary") or "")
+        portrait = platform.store.repositories.artwork.generated_for(str(item["id"]))
         return {
             **item,
             "active_behavior": behavior_id,
             "active_behavior_label": label,
+            **({"portrait": f"/world-art/{portrait}.webp"} if portrait else {}),
         }
 
     participants = [
@@ -666,6 +668,9 @@ def build_player_view(platform: Platform, player_id: str) -> dict[str, Any]:
         "tags": [str(item) for item in (location_entity.get("tags") or current.get("tags") or [])],
         "safe": bool(location_entity.get("safe", current.get("safe", False))),
     }
+    scene = platform.store.repositories.artwork.generated_for(current_id)
+    if scene:
+        location["artwork"] = f"/world-art/{scene}.webp"
     return {
         "status": "ok",
         "revision": int(platform.store.repositories.metadata.get("world_revision", 0) or 0),

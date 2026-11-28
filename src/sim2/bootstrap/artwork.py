@@ -11,7 +11,7 @@ from typing import Any
 
 
 _PATH = re.compile(r"assets/[a-zA-Z0-9_-]+\.webp")
-_MAX_BYTES = 8 * 1024 * 1024
+MAX_ARTWORK_BYTES = 8 * 1024 * 1024
 
 
 def artwork_paths(ui: Any) -> list[str]:
@@ -27,9 +27,9 @@ def artwork_paths(ui: Any) -> list[str]:
     return list(dict.fromkeys(paths))
 
 
-def _check_webp(name: str, data: bytes) -> bytes:
+def validate_webp(name: str, data: bytes) -> bytes:
     if (
-        len(data) < 20 or len(data) > _MAX_BYTES
+        len(data) < 20 or len(data) > MAX_ARTWORK_BYTES
         or data[:4] != b"RIFF" or data[8:12] != b"WEBP"
         or data[12:16] not in {b"VP8 ", b"VP8L", b"VP8X"}
         or int.from_bytes(data[4:8], "little") != len(data) - 8
@@ -48,7 +48,7 @@ def read_artwork_file(root: Path, name: str) -> bytes:
         if not path.is_file():
             raise ValueError(f"could not read package artwork {name}")
         with path.open("rb") as source:
-            return _check_webp(name, source.read(_MAX_BYTES + 1))
+            return validate_webp(name, source.read(MAX_ARTWORK_BYTES + 1))
     except (OSError, RuntimeError) as exc:
         raise ValueError(f"could not read package artwork {name}") from exc
 
@@ -65,10 +65,10 @@ def decode_template_artwork(world: dict[str, Any]) -> dict[str, bytes]:
     result = {}
     for name in names:
         value = encoded[name]
-        if not isinstance(value, str) or len(value) > 4 * ((_MAX_BYTES + 2) // 3):
+        if not isinstance(value, str) or len(value) > 4 * ((MAX_ARTWORK_BYTES + 2) // 3):
             raise ValueError(f"world.artwork[{name}] must be base64-encoded WebP of at most 8 MiB")
         try:
-            result[name] = _check_webp(name, base64.b64decode(value, validate=True))
+            result[name] = validate_webp(name, base64.b64decode(value, validate=True))
         except (binascii.Error, UnicodeEncodeError) as exc:
             raise ValueError(f"world.artwork[{name}] must be valid base64") from exc
     return result

@@ -19,6 +19,15 @@ CREATE TABLE IF NOT EXISTS world_artwork (
   digest TEXT PRIMARY KEY,
   image BLOB NOT NULL
 );
+CREATE TABLE IF NOT EXISTS generated_artwork (
+  subject_id TEXT PRIMARY KEY,
+  source_event_id INTEGER NOT NULL,
+  digest TEXT REFERENCES world_artwork(digest),
+  prompt TEXT NOT NULL DEFAULT '',
+  attempts INTEGER NOT NULL DEFAULT 0,
+  claim_token TEXT,
+  available_at REAL NOT NULL DEFAULT 0
+);
 CREATE TABLE IF NOT EXISTS entity (
   id TEXT PRIMARY KEY,
   entity_type TEXT NOT NULL,

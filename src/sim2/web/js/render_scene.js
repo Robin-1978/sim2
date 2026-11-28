@@ -1,4 +1,4 @@
-import { renderSceneWorldCover } from "./art.js";
+import { paintAvatar, renderSceneWorldCover } from "./art.js";
 import { applyAmbientProfile } from "./audio.js";
 import { $, clamp, crisisMetrics, crisisMood, el, formatWorldProperty, humanizeKey, state, toast, uiConfig } from "./core.js";
 import { nearbyParticipants, openCharacter } from "./render_panels.js";
@@ -111,7 +111,7 @@ export function renderScene() {
       const chip = el("button", `person-chip${person.status && person.status !== "idle" ? "" : " person-idle"}`);
       chip.type = "button";
       chip.title = `和 ${person.name || person.id} 交谈`;
-      chip.append(el("span", "person-avatar", String(person.name || person.id).slice(0, 1)));
+      chip.append(paintAvatar(el("span", "person-avatar"), person));
       const copy = el("span", "person-copy");
       const active = person.status === "executing" || person.status === "paused";
       copy.append(el("strong", "", person.name || person.id));

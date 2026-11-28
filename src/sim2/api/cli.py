@@ -216,6 +216,10 @@ def _build_parser() -> argparse.ArgumentParser:
     _add_agent_commands(sub)
     _add_serve_command(sub)
     _add_instance_commands(sub)
+    artwork = sub.add_parser("artwork", help="generate illustrations for a save with an independent image service")
+    artwork.add_argument("--db", type=Path, required=True)
+    artwork.add_argument("--config", type=Path, required=True, help="image backend configuration JSON")
+    artwork.add_argument("--watch", action="store_true", help="keep watching for newly encountered content")
     return parser
 
 
@@ -223,6 +227,35 @@ def _run_init(args: argparse.Namespace) -> None:
     config = args.config or world_path(args.world or "starter_village")
     db = create_instance(config, args.instance_id, args.runtime_root)
     print(json.dumps({"db_path": str(db)}, ensure_ascii=False))
+
+
+def _run_artwork(args: argparse.Namespace) -> None:
+    from contextlib import closing
+    from time import sleep
+
+    import httpx
+
+    from ..llm.image_backend import ArtworkConfig, ImageBackend
+    from ..persistence.store import WorldStore
+    from ..platform.artwork import ArtworkWorker
+
+    if not args.db.is_file():
+        raise SystemExit("Artwork worker requires an existing world save")
+    config = ArtworkConfig.load(args.config)
+    story = LLMRouter.from_default_config().provider_for_role("story")
+    with closing(WorldStore(args.db)) as store, httpx.Client(timeout=120) as client:
+        worker = ArtworkWorker(store, story, ImageBackend(config, client))
+        try:
+            while True:
+                result = worker.process_next()
+                if result != "idle" or not args.watch:
+                    print(json.dumps({"artwork": result}), flush=True)
+                if not args.watch:
+                    return
+                if result == "idle":
+                    sleep(5)
+        except KeyboardInterrupt:
+            return
 
 
 def _run_validate_world(args: argparse.Namespace) -> None:
@@ -465,6 +498,7 @@ _COMMANDS: dict[str, Callable[[argparse.Namespace], None]] = {
     "validate-world": _run_validate_world,
     "describe-world": _run_describe_world,
     "world-schema": _run_world_schema,
+    "artwork": _run_artwork,
     "build-world": _run_build_world,
     "decide": _run_decide,
     "mud": _run_mud,

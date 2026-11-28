@@ -199,6 +199,46 @@ Template export preserves files through the optional `world.artwork` map of
 package-relative paths to Base64 bytes. Compiling the template writes
 the binary files back to the package.
 
+### Runtime illustrations
+
+An optional game process can illustrate new locations and residents with a
+separately deployed image service. Existing worlds and packaged illustrations
+work without this process. The worker uses the configured Story text role to
+write a brief. It places results in the save, so an offline copy of that save
+can still display them and a world package upgrade preserves them.
+
+Create a deployment-side JSON file for the image service. Its credential, if
+required, comes from the named environment variable.
+
+```json
+{
+  "endpoint": "http://127.0.0.1:8001/v1/images/generations",
+  "model": "your-image-model",
+  "sizes": {"scene": "1536x1024", "portrait": "1024x1024"},
+  "style": "Painterly sky-island adventure, with weathered metals and amber light."
+}
+```
+
+```bash
+sim2 artwork --db /path/to/world.sqlite3 --config /path/to/artwork.json --watch
+```
+
+Omit `--watch` to process up to one illustration. The endpoint accepts a POST
+with `model`, `prompt`, `size`, `n: 1`, and `output_format: "webp"`. It returns
+`{"data":[{"b64_json":"..."}]}` with a WebP up to 8 MiB. Set `api_key_env` to
+send a bearer token, or omit it for a local unauthenticated service. The
+`sizes` map can select either kind by omitting the other key. Backends that
+support `quality` and WebP `output_compression` can receive those optional
+settings from the same file. Omit either option to use the provider's default.
+
+While the worker is running, it looks at players' current public locations.
+A God-created site or NPC becomes eligible when a player is present there.
+The Story prompt uses public scene descriptions or the nearby NPC's name and
+role. The worker creates one stable illustration per subject, with up to three
+attempts and backoff. The web client keeps its standard scene or initials until
+an image is ready. Packaged scene art has priority over generated art. The
+worker needs only the save, Story configuration and the image endpoint.
+
 Use `ui.spotlights` to feature one or more `rules.progression` IDs.
 Set `deadline_property` to a world property measured in remaining minutes,
 or set `deadline_clock_minute` to the cutoff minute of the world day.

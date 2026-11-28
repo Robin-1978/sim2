@@ -1,4 +1,5 @@
 import { loadDialogue, loadTrades, travelToNode } from "./actions.js";
+import { paintAvatar } from "./art.js";
 import { $, el, formatMinute, itemLabel, state, toast, translateNarrative, uiConfig } from "./core.js";
 
 
@@ -81,8 +82,13 @@ export function renderPeople() {
     if (!root) return;
     root.replaceChildren();
     const participants = nearbyParticipants();
-    if (state.selectedCharacter && !participants.some((item) => item.id === state.selectedCharacter.id)) {
-      closeCharacter();
+    if (state.selectedCharacter) {
+      const selected = participants.find((item) => item.id === state.selectedCharacter.id);
+      if (!selected) closeCharacter();
+      else if (selected.portrait !== state.selectedCharacter.portrait) {
+        state.selectedCharacter = selected;
+        paintAvatar($("character-avatar"), selected);
+      }
     }
     if (!participants.length) {
       root.append(el("p", "people-empty", "附近暂时没有可以交谈的人。"));
@@ -91,7 +97,7 @@ export function renderPeople() {
     for (const person of participants) {
       const card = el("button", "people-card");
       card.type = "button";
-      card.append(el("span", "person-avatar", String(person.name || person.id).slice(0, 1)));
+      card.append(paintAvatar(el("span", "person-avatar"), person));
       const copy = el("div");
       copy.append(el("strong", "", person.name || person.id));
       copy.append(el("small", "", personActivityLine(person)));
@@ -117,7 +123,7 @@ export function updateCharacterSheet(person) {
     const name = person?.name || person?.id || "人物";
     const active = person?.status === "executing" || person?.status === "paused";
     $("character-name").textContent = name;
-    $("character-avatar").textContent = String(name).slice(0, 1);
+    paintAvatar($("character-avatar"), person);
     const place = person?.location || person?.location_id || state.view?.location?.name || "附近";
     const remaining = Number(person?.initial_state?.remaining_minutes);
     $("character-location").textContent = Number.isFinite(remaining) && remaining > 0
