@@ -12,6 +12,14 @@ travel:
 resource_entity_types:
 - resource
 resource_caps:
+  holding_farm_plot: {min: 0, max: 1}
+  holding_yard_plot: {min: 0, max: 1}
+  holding_inn_plot: {min: 0, max: 1}
+  holding_fund: {min: 0, max: 40}
+  holding_food: {min: 0, max: 15}
+  holding_tools: {min: 0, max: 6}
+  holding_guest_food: {min: 0, max: 9}
+  holding_inn_room: {min: 0, max: 1}
   relief_desk: {min: 0, max: 1}
   relief_food: {min: 0, max: 10}
   relief_crew_food: {min: 0, max: 4}
@@ -139,6 +147,7 @@ resource_property_projections:
   paving_stock: paving_stock
   shop_road_slot: shop_road_slot
 world_property_labels:
+  holding_fund: {label: 产业经营金, decimals: 2}
   shop_cash: 工坊周转金
   shop_sales: 工坊累计货款
   shop_spent: 工坊支付货款与工钱
@@ -195,8 +204,8 @@ world_property_labels:
   substitute_shift: 待完成的枢门代班
   worker_mandate: 枢门班长席位
   settlement_fund: 公共维护基金
-  market_tolls: 低城实际门费
-  yard_tolls: 旧站实际门费
+  market_tolls: {label: 低城实际门费, decimals: 2}
+  yard_tolls: {label: 旧站实际门费, decimals: 2}
   old_foreman_vote: 旧站推荐签名
   high_warden_vote: 高地推荐签名
   market_permit: 低城坊市建造许可
@@ -220,6 +229,8 @@ world_property_labels:
   yard_freight: 铁轨货场本班货位
   yard_maintenance: 铁轨货场门况
 item_labels:
+  holding_food_crate: 炊坊饭箱
+  holding_kit: 自造修具
   tender_ore: 合同矿料
   tender_yard_crate: 旧站路石货箱
   gate_core: 门芯
@@ -741,20 +752,22 @@ progression:
 - id: tender_active
   priority: 0.99
   label: 正在履行三批路石的合同
-  summary: 班组会自行买料、做货和配送。你可亲自补上任一环，也能在等待时去做别的事。
+  summary: 每批用两份坊市矿料。水庭在坊市验收，旧站的货要送抵货场。可以亲自交付，或委托坊市班组。
   visible_when: world.tender_mode > 0 and world.tender_delivered < 3
   target_behaviors:
-  - tender_wait
   - tender_supply
   - tender_unload
   - tender_mason_court
   - tender_mason_yard
   - tender_receive_yard
   - tender_haul
+  support_behaviors:
+  - appoint_shop_crew
+  - tender_wait
 - id: tender_final
   priority: 1.0
   label: 三批路石全数验收
-  summary: 回坊市结清合同。交付的路石可以盖成一项有长期作用的公共工程。
+  summary: 到低城坊市结清合同，恢复平时的生产与分红。已交付的路石可用于公共工程。
   visible_when: world.tender_mode > 0 and world.tender_delivered == 3
   target_behaviors:
   - tender_close
@@ -773,7 +786,7 @@ progression:
   priority: 0.67
   label: 下一班生产与城市维护
   summary: 用货款继续周转，用路石维护门线。你也可以暂停班组，把时间留给下一条路线。
-  visible_when: world.shop_road == 1 and world.shop_dividends >= 1
+  visible_when: world.shop_road == 1 and world.shop_dividends >= 1 and world.tender_mode == 0
   target_behaviors:
   - shop_use_paving_stock
   - shop_pay_dividend
@@ -781,8 +794,12 @@ progression:
   - shop_supply
   - appoint_shop_crew
   - pause_shop_crew
-  support_behaviors:
-  - wait_for_shop
+- id: shop_contract_maintenance
+  priority: 0.67
+  label: 低城门线需要维护
+  summary: 到低城坊市用两份路石恢复三点门况。维护可以与合同交付同时进行。
+  visible_when: world.tender_mode > 0 and world.market_link == 1 and world.market_maintenance <= 8 and world.paving_stock >= 2
+  target_behaviors: [shop_use_paving_stock]
 - id: survey
   priority: 0.6
   label: 先看看城外能接到哪里
@@ -796,10 +813,11 @@ progression:
 - id: bridge_works
   priority: 0.7
   label: 让北栈桥能走重货
-  summary: 加固只需两份框架件。竣工后可以把矿料走陆路运进低城，或回头继续建门。
+  summary: 铁轨货场买原矿，河滩农圃买燃料。在高地枢门或旧站工坊，用四份原矿和两份燃料炼成两枚金属锭，再做三份框架件。
   visible_when: world.bridge_surveyed == 1 and world.bridge_improved == 0
   target_behaviors:
   - improve_bridge
+  support_behaviors: [craft_frame, craft_smelt, buy_ore, buy_fuel]
 - id: choose
   priority: 0.9
   label: 接通第一条门线
@@ -884,6 +902,23 @@ resident_arrivals:
     routine: routine_resident
     inventory: {water: 1, meal: 1}
 player_requirement_hints:
+  world.holding_fund >= 2.5: 接班前经营账需要两枚五十分，可以先到存取经营金补足
+  world.holding_fund >= 1: 经营金至少需要一枚，可以先存入一枚
+  world.holding_fund >= 2: 同炉打两件需两枚经营金
+  world.holding_fund >= 3: 账上须有三枚，取一枚后留下两枚
+  world.holding_food >= 1: 炊坊还没有可领的饭
+  (actor.inventory.holding_food_crate >= 3 or (world.holding_food >= 3 and actor.inventory.holding_food_crate == 0)): 先备好三份饭，再选择去向
+  world.holding_tools >= 1: 先打一件修具
+  world.holding_tools >= 2: 铺路需要两件修具
+  (actor.inventory.holding_kit >= 1 or world.holding_tools >= 1): 先在旧站打一件修具
+  world.holding_guest_food >= 1: 柜台没饭，可以用随身饭或炊坊的产出补上
+  world.yard_food <= 23: 旧站还有足够的饭，库存降到二十三份才收
+  world.high_beds >= 1: 宿铺需要一张空床
+  world.low_water >= 17: 水庭需要留十六份净水，等有余水再开炉
+  world.yard_ore >= 4: 打一件需两份矿料，并为旧站留两份
+  world.yard_ore >= 6: 同炉打两件需四份矿料，并为旧站留两份
+  world.shop_dividends < world.shop_batches: 已结算的分红都领过了，下一批卖出后可再领
+  world.tender_mode == 0: 交齐三批路石后，到低城坊市结清合同
   world.site_surveyed == 1: 先到灰脊集口勘测门端
   world.merit_count >= 3: 等白砾完成三个已验收的代班
   world.service_votes >= 2: 等枢门与旧站各提交一份推荐

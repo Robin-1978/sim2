@@ -4,7 +4,9 @@ import { $, OPERATOR_KEY, PLAYER_KEY, describeError, el, setOnline, state, stora
 import { openActionDialog, renderActions, renderMobileActionBar, renderTask } from "./render_actions.js";
 import { maybeCelebrateEvents } from "./celebration.js";
 import { openCreatePanel, renderEntry, renderEntryInstances } from "./render_entry.js";
+import { renderHoldings } from "./render_holdings.js";
 import { SKIP_EVENTS, bundleText, closeCharacter, closePlayerSheet, nearbyParticipants, parseBundle, personName, renderFeed, renderMap, showMapDialog, updateCharacterSheet } from "./render_panels.js";
+import { renderGoals } from "./render_world.js";
 
 
 export async function loadEntryContext() {
@@ -69,6 +71,7 @@ export function showGameScreen(name) {
     for (const button of game.querySelectorAll(".game-nav button")) {
       button.setAttribute("aria-pressed", String(button.dataset.screen === name));
     }
+    if (name === "holdings") renderHoldings();
     window.scrollTo({ top: 0, behavior: "instant" });
   }
 
@@ -512,6 +515,7 @@ export async function submitAction(action, extra = {}, button = null) {
         state.busy = false;
         renderTask();
         renderActions();
+        renderGoals();
       }
     });
   }

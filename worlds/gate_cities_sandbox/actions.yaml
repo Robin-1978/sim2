@@ -348,7 +348,7 @@ actions:
 - id: load_market_fee
   version: 1
   verb: allocate
-  description: 公开竞争期付一枚城币并预约货位。
+  description: 公开竞争期付二十五分城币并预约货位。
   parameters: {}
   preconditions:
   - actor.alive
@@ -357,17 +357,18 @@ actions:
   - world.market_maintenance > 0
   - world.lockdown == 0
   - actor.inventory.ore < 1
+  - actor.inventory.coin >= 0.25
   - world.trade_policy == 2
   duration: {minutes: 4}
   costs:
-    reserve: {market_freight: 1, mine_ore: 1, coin: 1}
+    reserve: {market_freight: 1, mine_ore: 1, coin: 0.25}
     per_minute: {}
     on_success: {}
     on_failure: {}
     refund: {}
   effects:
   - {type: inventory_add, item: ore, quantity: 1}
-  - {type: resource_transfer, resource_id: market_tolls, source_item: coin, quantity: 1}
+  - {type: resource_transfer, resource_id: market_tolls, source_item: coin, quantity: 0.25}
   success: {condition: actor.alive, result: load_market_fee}
   failure: {condition: actor.incapacitated, result: interrupted}
   kind: atomic
@@ -639,7 +640,7 @@ actions:
 - id: load_yard_fee
   version: 1
   verb: allocate
-  description: 公开竞争期付一枚城币并预约货位。
+  description: 公开竞争期付二十五分城币并预约货位。
   parameters: {}
   preconditions:
   - actor.alive
@@ -648,17 +649,18 @@ actions:
   - world.yard_maintenance > 0
   - world.lockdown == 0
   - actor.inventory.ore < 1
+  - actor.inventory.coin >= 0.25
   - world.trade_policy == 2
   duration: {minutes: 4}
   costs:
-    reserve: {yard_freight: 1, mine_ore: 1, coin: 1}
+    reserve: {yard_freight: 1, mine_ore: 1, coin: 0.25}
     per_minute: {}
     on_success: {}
     on_failure: {}
     refund: {}
   effects:
   - {type: inventory_add, item: ore, quantity: 1}
-  - {type: resource_transfer, resource_id: yard_tolls, source_item: coin, quantity: 1}
+  - {type: resource_transfer, resource_id: yard_tolls, source_item: coin, quantity: 0.25}
   success: {condition: actor.alive, result: load_yard_fee}
   failure: {condition: actor.incapacitated, result: interrupted}
   kind: atomic
@@ -3776,3 +3778,819 @@ actions:
   executor: effect_pipeline
   interrupt_policy: cancel
   interaction_policy: allow
+
+- id: holding_open_farm
+  version: 1
+  verb: build
+  description: 给地块付一枚钱，其余 2 枚记入自己的经营金。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - actor.state.location_id == 'low_fields'
+  - actor.role == 'player'
+  - world.holding_farm == 0
+  - world.holding_farm_plot >= 1
+  - world.holding_fund <= 38
+  - world.farm_till <= 119
+  duration: {minutes: 5}
+  costs:
+    reserve: {coin: 3, holding_farm_plot: 1}
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - {type: world_resource_delta, resource_id: farm_till, delta: 1}
+  - {type: world_resource_delta, resource_id: holding_fund, delta: 2}
+  - {type: world_property_set, property: holding_farm, value: 1}
+  - {type: public_event, event: gatebuild.holding_opened, summary: 河滩炊坊已经开办，玩家可以决定产出怎么用。, data: {location_id: low_fields, holding: farm}}
+  success: {condition: actor.alive, result: holding_open_farm}
+  failure: {condition: actor.incapacitated or world.holding_fund > 38 or world.farm_till > 119, result: interrupted}
+  kind: atomic
+  executor: effect_pipeline
+  interrupt_policy: cancel
+  interaction_policy: allow
+
+- id: holding_open_yard
+  version: 1
+  verb: build
+  description: 给地块付一枚钱，其余 2 枚记入自己的经营金。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - actor.state.location_id == 'old_station'
+  - actor.role == 'player'
+  - world.holding_yard == 0
+  - world.holding_yard_plot >= 1
+  - world.holding_fund <= 38
+  - world.yard_wages <= 169
+  duration: {minutes: 5}
+  costs:
+    reserve: {coin: 3, holding_yard_plot: 1}
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - {type: world_resource_delta, resource_id: yard_wages, delta: 1}
+  - {type: world_resource_delta, resource_id: holding_fund, delta: 2}
+  - {type: world_property_set, property: holding_yard, value: 1}
+  - {type: public_event, event: gatebuild.holding_opened, summary: 旧站修具台已经开办，玩家可以决定产出怎么用。, data: {location_id: old_station, holding: yard}}
+  success: {condition: actor.alive, result: holding_open_yard}
+  failure: {condition: actor.incapacitated or world.holding_fund > 38 or world.yard_wages > 169, result: interrupted}
+  kind: atomic
+  executor: effect_pipeline
+  interrupt_policy: cancel
+  interaction_policy: allow
+
+- id: holding_open_inn
+  version: 1
+  verb: build
+  description: 给地块付一枚钱，其余 1 枚记入自己的经营金。占用一个宿铺床位，可接待住客。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - actor.state.location_id == 'high_lodges'
+  - actor.role == 'player'
+  - world.holding_inn == 0
+  - world.holding_inn_plot >= 1
+  - world.holding_fund <= 39
+  - world.high_wages <= 169
+  - world.high_beds >= 1
+  duration: {minutes: 5}
+  costs:
+    reserve: {coin: 2, holding_inn_plot: 1, high_beds: 1}
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - {type: world_resource_delta, resource_id: high_wages, delta: 1}
+  - {type: world_resource_delta, resource_id: holding_fund, delta: 1}
+  - {type: world_property_set, property: holding_inn, value: 1}
+  - {type: public_event, event: gatebuild.holding_opened, summary: 高地驿舍已经开办，玩家可以决定产出怎么用。, data: {location_id: high_lodges, holding: inn}}
+  success: {condition: actor.alive, result: holding_open_inn}
+  failure: {condition: actor.incapacitated or world.holding_fund > 39 or world.high_wages > 169, result: interrupted}
+  kind: atomic
+  executor: effect_pipeline
+  interrupt_policy: cancel
+  interaction_policy: allow
+
+- id: holding_reinvest
+  version: 1
+  verb: trade
+  description: 把一枚随身钱存入三处产业共用的经营账。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - location.safe
+  - actor.role == 'player'
+  - (world.holding_farm == 1 or world.holding_yard == 1 or world.holding_inn == 1)
+  - world.holding_fund < 40
+  duration: {minutes: 2}
+  costs:
+    reserve: {coin: 1}
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - {type: world_resource_delta, resource_id: holding_fund, delta: 1}
+  success: {condition: actor.alive, result: holding_reinvest}
+  failure: {condition: actor.incapacitated or world.holding_fund >= 40, result: interrupted}
+  kind: atomic
+  executor: effect_pipeline
+  interrupt_policy: cancel
+  interaction_policy: allow
+
+- id: holding_draw
+  version: 1
+  verb: trade
+  description: 从经营账拿回一枚，账上至少保留两枚。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - location.safe
+  - actor.role == 'player'
+  - (world.holding_farm == 1 or world.holding_yard == 1 or world.holding_inn == 1)
+  - world.holding_fund >= 3
+  duration: {minutes: 2}
+  costs:
+    reserve: {holding_fund: 1}
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - {type: inventory_add, item: coin, quantity: 1}
+  success: {condition: actor.alive, result: holding_draw}
+  failure: {condition: actor.incapacitated, result: interrupted}
+  kind: atomic
+  executor: effect_pipeline
+  interrupt_policy: cancel
+  interaction_policy: allow
+
+- id: holding_cook_0
+  version: 1
+  verb: craft
+  description: 做成 3 份可分配的饭。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - actor.state.location_id == 'low_fields'
+  - actor.role == 'player'
+  - world.holding_farm == 1
+  - world.holding_fund >= 1
+  - world.low_water >= 17
+  - world.farm_till < 120
+  - world.holding_kiln == 0
+  - world.holding_food <= 12
+  - world.field_fuel >= 1
+  duration: {minutes: 6}
+  costs:
+    reserve: {holding_fund: 1, low_water: 1, field_fuel: 1}
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - {type: world_resource_delta, resource_id: farm_till, delta: 1}
+  - {type: world_resource_delta, resource_id: holding_food, delta: 3}
+  - {type: world_property_delta, property: holding_meals_made, delta: 3}
+  success: {condition: actor.alive, result: holding_cook_0}
+  failure: {condition: actor.incapacitated or world.holding_food > 12 or world.farm_till >= 120, result: interrupted}
+  kind: atomic
+  executor: effect_pipeline
+  interrupt_policy: cancel
+  interaction_policy: allow
+
+- id: holding_cook_1
+  version: 1
+  verb: craft
+  description: 做成 5 份可分配的饭。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - actor.state.location_id == 'low_fields'
+  - actor.role == 'player'
+  - world.holding_farm == 1
+  - world.holding_fund >= 1
+  - world.low_water >= 17
+  - world.farm_till < 120
+  - world.holding_kiln == 1
+  - world.holding_food <= 10
+  duration: {minutes: 6}
+  costs:
+    reserve: {holding_fund: 1, low_water: 1}
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - {type: world_resource_delta, resource_id: farm_till, delta: 1}
+  - {type: world_resource_delta, resource_id: holding_food, delta: 5}
+  - {type: world_property_delta, property: holding_meals_made, delta: 5}
+  success: {condition: actor.alive, result: holding_cook_1}
+  failure: {condition: actor.incapacitated or world.holding_food > 10 or world.farm_till >= 120, result: interrupted}
+  kind: atomic
+  executor: effect_pipeline
+  interrupt_policy: cancel
+  interaction_policy: allow
+
+- id: holding_take_meal
+  version: 1
+  verb: trade
+  description: 从自己的炊坊库存取一份饭，放进行囊。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - actor.state.location_id == 'low_fields'
+  - actor.role == 'player'
+  - world.holding_farm == 1
+  - world.holding_food >= 1
+  duration: {minutes: 2}
+  costs:
+    reserve: {holding_food: 1}
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - {type: inventory_add, item: meal, quantity: 1}
+  success: {condition: actor.alive, result: holding_take_meal}
+  failure: {condition: actor.incapacitated, result: interrupted}
+  kind: atomic
+  executor: effect_pipeline
+  interrupt_policy: cancel
+  interaction_policy: allow
+
+- id: holding_load_food
+  version: 1
+  verb: work
+  description: 从炊坊装好三份饭。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - actor.state.location_id == 'low_fields'
+  - actor.role == 'player'
+  - world.holding_farm == 1
+  - world.holding_food >= 3
+  - actor.inventory.holding_food_crate == 0
+  duration: {minutes: 2}
+  costs:
+    reserve: {holding_food: 3}
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - {type: inventory_add, item: holding_food_crate, quantity: 3}
+  success: {condition: actor.alive, result: holding_load_food}
+  failure: {condition: actor.incapacitated, result: interrupted}
+  kind: atomic
+  executor: effect_pipeline
+  interrupt_policy: cancel
+  interaction_policy: allow
+
+- id: holding_deliver_court
+  version: 1
+  verb: trade
+  description: 把三份饭送到水庭，结算 3 枚。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - actor.state.location_id == 'low_city'
+  - actor.role == 'player'
+  - world.holding_farm == 1
+  - world.low_food <= 45
+  - world.low_wages >= 3
+  - world.holding_fund <= 37
+  - actor.inventory.holding_food_crate >= 3
+  duration: {minutes: 3}
+  costs:
+    reserve: {holding_food_crate: 3, low_wages: 3}
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - {type: world_resource_delta, resource_id: low_food, delta: 3}
+  - {type: world_resource_delta, resource_id: holding_fund, delta: 3}
+  - {type: world_property_delta, property: holding_sales, delta: 3}
+  - {type: public_event, event: gatebuild.holding_goods, summary: 把三份饭送到水庭，结算 3 枚。, data: {location_id: low_city, amount: 3, price: 3, buyer: court}}
+  success: {condition: actor.alive, result: holding_deliver_court}
+  failure: {condition: actor.incapacitated or world.low_food > 45 or world.holding_fund > 37, result: interrupted}
+  kind: atomic
+  executor: effect_pipeline
+  interrupt_policy: cancel
+  interaction_policy: allow
+
+- id: holding_deliver_yard
+  version: 1
+  verb: trade
+  description: 把三份饭送到旧站，结算 4 枚。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - actor.state.location_id == 'old_yard'
+  - actor.role == 'player'
+  - world.holding_farm == 1
+  - world.yard_food <= 23
+  - world.yard_wages >= 4
+  - world.holding_fund <= 36
+  - actor.inventory.holding_food_crate >= 3
+  duration: {minutes: 3}
+  costs:
+    reserve: {holding_food_crate: 3, yard_wages: 4}
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - {type: world_resource_delta, resource_id: yard_food, delta: 3}
+  - {type: world_resource_delta, resource_id: holding_fund, delta: 4}
+  - {type: world_property_delta, property: holding_sales, delta: 4}
+  - {type: public_event, event: gatebuild.holding_goods, summary: 把三份饭送到旧站，结算 4 枚。, data: {location_id: old_yard, amount: 3, price: 4, buyer: yard}}
+  success: {condition: actor.alive, result: holding_deliver_yard}
+  failure: {condition: actor.incapacitated or world.yard_food > 23 or world.holding_fund > 36, result: interrupted}
+  kind: atomic
+  executor: effect_pipeline
+  interrupt_policy: cancel
+  interaction_policy: allow
+
+- id: holding_deliver_inn
+  version: 1
+  verb: trade
+  description: 把三份饭交到驿舍柜台，备给三个付费住客。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - actor.state.location_id == 'high_lodges'
+  - actor.role == 'player'
+  - world.holding_farm == 1
+  - world.holding_guest_food <= 6
+  - world.holding_inn == 1
+  - actor.inventory.holding_food_crate >= 3
+  duration: {minutes: 3}
+  costs:
+    reserve: {holding_food_crate: 3}
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - {type: world_resource_delta, resource_id: holding_guest_food, delta: 3}
+  - {type: public_event, event: gatebuild.holding_goods, summary: 把三份饭交到驿舍柜台，备给三个付费住客。, data: {location_id: high_lodges, amount: 3, price: 0, buyer: inn}}
+  success: {condition: actor.alive, result: holding_deliver_inn}
+  failure: {condition: actor.incapacitated or world.holding_guest_food > 6, result: interrupted}
+  kind: atomic
+  executor: effect_pipeline
+  interrupt_policy: cancel
+  interaction_policy: allow
+
+- id: holding_unpack_food
+  version: 1
+  verb: trade
+  description: 把三份已装的饭无损放回自己的仓。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - actor.state.location_id == 'low_fields'
+  - actor.role == 'player'
+  - actor.inventory.holding_food_crate >= 3
+  - world.holding_food <= 12
+  duration: {minutes: 2}
+  costs:
+    reserve: {holding_food_crate: 3}
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - {type: world_resource_delta, resource_id: holding_food, delta: 3}
+  success: {condition: actor.alive, result: holding_unpack_food}
+  failure: {condition: actor.incapacitated or world.holding_food > 12, result: interrupted}
+  kind: atomic
+  executor: effect_pipeline
+  interrupt_policy: cancel
+  interaction_policy: allow
+
+- id: holding_forge
+  version: 1
+  verb: craft
+  description: 用两份旧站矿料和一枚经营金，做一件用于建设、维护或出售的修具。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - actor.state.location_id == 'old_station'
+  - actor.role == 'player'
+  - world.holding_yard == 1
+  - world.yard_ore >= 4
+  - world.holding_fund >= 1
+  - world.holding_tools < 6
+  - world.yard_wages < 170
+  duration: {minutes: 7}
+  costs:
+    reserve: {yard_ore: 2, holding_fund: 1}
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - {type: world_resource_delta, resource_id: yard_wages, delta: 1}
+  - {type: world_resource_delta, resource_id: holding_tools, delta: 1}
+  - {type: world_property_delta, property: holding_tools_made, delta: 1}
+  success: {condition: actor.alive, result: holding_forge}
+  failure: {condition: actor.incapacitated or world.yard_wages >= 170 or world.holding_tools >= 6, result: interrupted}
+  kind: atomic
+  executor: effect_pipeline
+  interrupt_policy: cancel
+  interaction_policy: allow
+
+- id: holding_forge_pair
+  version: 1
+  verb: craft
+  description: 一起打两件修具，少走一个工班。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - actor.state.location_id == 'old_station'
+  - actor.role == 'player'
+  - world.holding_yard == 1
+  - world.yard_ore >= 6
+  - world.holding_fund >= 2
+  - world.holding_tools <= 4
+  - world.yard_wages <= 168
+  duration: {minutes: 12}
+  costs:
+    reserve: {yard_ore: 4, holding_fund: 2}
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - {type: world_resource_delta, resource_id: yard_wages, delta: 2}
+  - {type: world_resource_delta, resource_id: holding_tools, delta: 2}
+  - {type: world_property_delta, property: holding_tools_made, delta: 2}
+  success: {condition: actor.alive, result: holding_forge_pair}
+  failure: {condition: actor.incapacitated or world.yard_wages > 168 or world.holding_tools > 4, result: interrupted}
+  kind: atomic
+  executor: effect_pipeline
+  interrupt_policy: cancel
+  interaction_policy: allow
+
+- id: holding_sell_tool
+  version: 1
+  verb: trade
+  description: 旧站用三枚薪金收一件修具。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - actor.state.location_id == 'old_station'
+  - actor.role == 'player'
+  - world.holding_yard == 1
+  - world.holding_tools >= 1
+  - world.yard_wages >= 3
+  - world.holding_fund <= 37
+  duration: {minutes: 3}
+  costs:
+    reserve: {holding_tools: 1, yard_wages: 3}
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - {type: world_resource_delta, resource_id: holding_fund, delta: 3}
+  - {type: world_property_delta, property: holding_sales, delta: 3}
+  - {type: public_event, event: gatebuild.holding_goods, summary: 旧站付三枚钱收走了一件修具。, data: {location_id: old_station, amount: 1, price: 3}}
+  success: {condition: actor.alive, result: holding_sell_tool}
+  failure: {condition: actor.incapacitated or world.holding_fund > 37, result: interrupted}
+  kind: atomic
+  executor: effect_pipeline
+  interrupt_policy: cancel
+  interaction_policy: allow
+
+- id: holding_bridge
+  version: 1
+  verb: build
+  description: 消耗两件修具，让农圃到旧站的直路只需七分钟。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - actor.state.location_id == 'old_station'
+  - actor.role == 'player'
+  - world.holding_yard == 1
+  - world.holding_tools >= 2
+  - world.holding_road == 0
+  duration: {minutes: 8}
+  costs:
+    reserve: {holding_tools: 2}
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - {type: route_edit, from: low_fields, to: old_station, distance: 7}
+  - {type: world_property_set, property: holding_road, value: 1}
+  - {type: public_event, event: gatebuild.holding_network, summary: 农圃与旧站之间铺出七分钟辙道，可以实际走这条路。, data: {location_id: old_station, origin: low_fields, destination: old_station}}
+  success: {condition: actor.alive, result: holding_bridge}
+  failure: {condition: actor.incapacitated, result: interrupted}
+  kind: atomic
+  executor: effect_pipeline
+  interrupt_policy: cancel
+  interaction_policy: allow
+
+- id: holding_load_tool
+  version: 1
+  verb: work
+  description: 把一件修具装进行囊。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - actor.state.location_id == 'old_station'
+  - actor.role == 'player'
+  - world.holding_tools >= 1
+  - actor.inventory.holding_kit == 0
+  duration: {minutes: 2}
+  costs:
+    reserve: {holding_tools: 1}
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - {type: inventory_add, item: holding_kit, quantity: 1}
+  success: {condition: actor.alive, result: holding_load_tool}
+  failure: {condition: actor.incapacitated, result: interrupted}
+  kind: atomic
+  executor: effect_pipeline
+  interrupt_policy: cancel
+  interaction_policy: allow
+
+- id: holding_fit_kiln
+  version: 1
+  verb: build
+  description: 给炊坊装上旧站修具，一炉五份、免燃料。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - actor.state.location_id == 'low_fields'
+  - actor.role == 'player'
+  - world.holding_farm == 1
+  - world.holding_kiln == 0
+  - actor.inventory.holding_kit >= 1
+  duration: {minutes: 5}
+  costs:
+    reserve: {holding_kit: 1}
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - {type: world_property_set, property: holding_kiln, value: 1}
+  - {type: public_event, event: gatebuild.holding_network, summary: 用旧站修具改好了炉。一份水现在可做五份饭，免用燃料。, data: {location_id: low_fields}}
+  success: {condition: actor.alive, result: holding_fit_kiln}
+  failure: {condition: actor.incapacitated, result: interrupted}
+  kind: atomic
+  executor: effect_pipeline
+  interrupt_policy: cancel
+  interaction_policy: allow
+
+- id: holding_fix_gate
+  version: 1
+  verb: build
+  description: 用一件修具保养低城货门，补四格门况。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - actor.state.location_id == 'low_market'
+  - actor.role == 'player'
+  - world.market_link == 1
+  - world.market_maintenance <= 8
+  - actor.inventory.holding_kit >= 1
+  duration: {minutes: 4}
+  costs:
+    reserve: {holding_kit: 1}
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - {type: world_resource_delta, resource_id: market_maintenance, delta: 4}
+  - {type: public_event, event: gatebuild.holding_network, summary: 自备修具修补了低城货门，门况增加四格。, data: {location_id: low_market}}
+  success: {condition: actor.alive, result: holding_fix_gate}
+  failure: {condition: actor.incapacitated or world.market_maintenance > 8, result: interrupted}
+  kind: atomic
+  executor: effect_pipeline
+  interrupt_policy: cancel
+  interaction_policy: allow
+
+- id: holding_stock_inn
+  version: 1
+  verb: trade
+  description: 把行囊的一份饭放到驿舍柜台。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - actor.state.location_id == 'high_lodges'
+  - actor.role == 'player'
+  - world.holding_inn == 1
+  - world.holding_guest_food < 9
+  duration: {minutes: 2}
+  costs:
+    reserve: {meal: 1}
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - {type: world_resource_delta, resource_id: holding_guest_food, delta: 1}
+  success: {condition: actor.alive, result: holding_stock_inn}
+  failure: {condition: actor.incapacitated or world.holding_guest_food >= 9, result: interrupted}
+  kind: atomic
+  executor: effect_pipeline
+  interrupt_policy: cancel
+  interaction_policy: allow
+
+- id: holding_sleep
+  version: 1
+  verb: rest
+  description: 用一份柜台饭，恢复饱足与精力。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - actor.state.location_id == 'high_lodges'
+  - actor.role == 'player'
+  - world.holding_inn == 1
+  - world.holding_guest_food >= 1
+  duration: {minutes: 8}
+  costs:
+    reserve: {holding_guest_food: 1}
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - {type: need_delta, need: satiety, delta: 38}
+  - {type: attribute_delta, attribute: stamina, delta: 22}
+  success: {condition: actor.alive, result: holding_sleep}
+  failure: {condition: actor.incapacitated, result: interrupted}
+  kind: atomic
+  executor: effect_pipeline
+  interrupt_policy: cancel
+  interaction_policy: allow
+
+- id: holding_serve_guest
+  version: 1
+  verb: rest
+  description: 从自己的钱袋付一枚，在高地驿舍吃饭休息。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - actor.state.location_id == 'high_lodges'
+  - actor.role != 'player'
+  - actor.state.job_region == 'high'
+  - actor.inventory.coin >= 1
+  - world.holding_inn == 1
+  - world.holding_fund < 40
+  - world.holding_guest_food >= 1
+  - world.holding_inn_room >= 1
+  - (actor.need.satiety < 72 or actor.state.stamina < 70)
+  duration: {minutes: 6}
+  costs:
+    reserve: {coin: 1, holding_guest_food: 1, holding_inn_room: 1}
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - {type: world_resource_delta, resource_id: holding_fund, delta: 1}
+  - {type: world_property_delta, property: holding_sales, delta: 1}
+  - {type: world_property_delta, property: holding_guests, delta: 1}
+  - {type: world_resource_delta, resource_id: holding_inn_room, delta: 1}
+  - {type: need_delta, need: satiety, delta: 44}
+  - {type: attribute_delta, attribute: stamina, delta: 24}
+  - {type: public_event, event: gatebuild.holding_guest, summary: 有一名高地居民实际付了一枚钱，在驿舍领饭休息。, data: {location_id: high_lodges, price: 1}}
+  success: {condition: actor.alive, result: holding_serve_guest}
+  failure: {condition: actor.incapacitated or world.holding_fund >= 40, result: interrupted}
+  kind: atomic
+  executor: effect_pipeline
+  interrupt_policy: cancel
+  interaction_policy: allow
+
+- id: holding_hire_farm
+  version: 1
+  verb: negotiate
+  description: 把缺粮时的炊坊供餐交给江遥，每完成一班六份饭结五十分工钱。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - actor.role == 'player'
+  - location.safe
+  - world.holding_farm == 1
+  - world.holding_farm_managed == 0
+  - world.holding_fund >= 2.5
+  duration: {minutes: 2}
+  costs: {reserve: {}, per_minute: {}, on_success: {}, on_failure: {}, refund: {}}
+  effects:
+  - {type: world_property_set, property: holding_farm_managed, value: 1}
+  - {type: public_event, event: gatebuild.holding_management, summary: 江遥受托为河滩炊坊供餐，每完成一班六份饭领五十分工钱。, data: {location_id: low_fields, manager_id: steward, active: true}}
+  success: {condition: actor.alive, result: holding_hire_farm}
+  failure: {condition: actor.incapacitated or world.holding_farm_managed != 0 or world.holding_fund < 2.5, result: interrupted}
+  kind: atomic
+  executor: effect_pipeline
+  interrupt_policy: cancel
+  interaction_policy: allow
+
+- id: holding_pause_farm
+  version: 1
+  verb: negotiate
+  description: 暂停接新班。已备料开工的班照常结算。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - actor.role == 'player'
+  - location.safe
+  - world.holding_farm_managed == 1
+  duration: {minutes: 2}
+  costs: {reserve: {}, per_minute: {}, on_success: {}, on_failure: {}, refund: {}}
+  effects:
+  - {type: world_property_set, property: holding_farm_managed, value: 0}
+  - {type: public_event, event: gatebuild.holding_management, summary: 河滩炊坊暂停了委托接单。, data: {location_id: low_fields, manager_id: steward, active: false}}
+  success: {condition: actor.alive, result: holding_pause_farm}
+  failure: {condition: actor.incapacitated or world.holding_farm_managed != 1, result: interrupted}
+  kind: atomic
+  executor: effect_pipeline
+  interrupt_policy: cancel
+  interaction_policy: allow
+
+- &managed_farm_order
+  id: holding_manage_farm_wood
+  version: 1
+  verb: craft
+  description: 为缺粮的水庭做六份饭，水庭来炊坊取货，整班交付后结薪。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - actor.role == '低城议事员'
+  - actor.state.location_id == 'low_fields'
+  - context.day_phase == 'workday'
+  - world.holding_farm == 1
+  - world.holding_farm_managed == 1
+  - world.holding_fund >= 2.5
+  - world.holding_fund <= 36.5
+  - world.low_water >= 18
+  - world.low_food <= 12
+  - world.low_wages >= 11
+  - world.farm_till <= 118
+  - world.holding_kiln == 0
+  - world.field_fuel >= 2
+  duration: {minutes: 12}
+  costs:
+    reserve: {holding_fund: 2.5, low_wages: 6, low_water: 2, field_fuel: 2}
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - {type: world_resource_delta, resource_id: farm_till, delta: 2}
+  - {type: inventory_add, item: coin, quantity: 0.5}
+  - {type: world_resource_delta, resource_id: holding_fund, delta: 6}
+  - {type: world_resource_delta, resource_id: low_food, delta: 6}
+  - {type: world_property_delta, property: holding_meals_made, delta: 6}
+  - {type: world_property_delta, property: holding_sales, delta: 6}
+  - {type: world_property_delta, property: holding_manager_wages, delta: 0.5}
+  - {type: world_property_delta, property: holding_manager_profit, delta: 3.5}
+  - {type: public_event, event: gatebuild.holding_managed_sale, summary: 水庭从河滩炊坊收六份饭。江遥结薪五十分，经营账净入三枚五十分。, data: {location_id: low_fields, amount: 6, price: 6, wage: 0.5, profit: 3.5}}
+  success: {condition: actor.alive, result: holding_managed_sale}
+  failure:
+    condition: actor.incapacitated or world.holding_fund > 34 or world.low_food > 12 or world.low_water < 16 or world.farm_till > 118
+    result: interrupted
+  kind: atomic
+  executor: effect_pipeline
+  interrupt_policy: cancel
+  interaction_policy: allow
+
+- <<: *managed_farm_order
+  id: holding_manage_farm_kiln
+  description: 用改造后的炉子做六份订单饭，省下两份燃料。
+  preconditions:
+  - actor.alive
+  - actor.role == '低城议事员'
+  - actor.state.location_id == 'low_fields'
+  - context.day_phase == 'workday'
+  - world.holding_farm == 1
+  - world.holding_farm_managed == 1
+  - world.holding_fund >= 2.5
+  - world.holding_fund <= 36.5
+  - world.low_water >= 18
+  - world.low_food <= 12
+  - world.low_wages >= 11
+  - world.farm_till <= 118
+  - world.holding_kiln == 1
+  costs:
+    reserve: {holding_fund: 2.5, low_wages: 6, low_water: 2}
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}

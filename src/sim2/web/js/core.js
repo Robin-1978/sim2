@@ -364,7 +364,8 @@ export function formatWorldProperty(value, meta = {}) {
   }
   if (meta.unit === "percent") return `${Math.round(numeric * 100)}%`;
   if (meta.unit === "hours") return `${Math.round(numeric * 10) / 10} 小时`;
-  return `${Math.round(numeric * 10) / 10}`;
+  const scale = 10 ** clamp(meta.decimals ?? 1, 0, 4);
+  return `${Math.round(numeric * scale) / scale}`;
 }
 
 

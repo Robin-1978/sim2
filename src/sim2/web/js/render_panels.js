@@ -557,6 +557,9 @@ export function renderTopology(canvas, map, options = {}) {
       .filter((action) => action.kind === "travel")
       .map((action) => [action.destination_id || action.parameters?.location_id, action]));
     const current = state.view?.location?.id;
+    const holdings = new Map((state.view?.ui?.holdings?.plots || [])
+      .filter((plot) => state.view?.world_properties?.[plot.opened])
+      .map((plot) => [plot.location, plot.name]));
 
     const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
     svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
@@ -601,7 +604,13 @@ export function renderTopology(canvas, map, options = {}) {
             : compact
               ? (occupants ? `${occupants} 人` : nodeTags.slice(0, 1).join(" · "))
               : nodeTags.join(" · ");
-      if (detail) button.append(el("small", "", detail));
+      const property = holdings.get(node.id);
+      if (property && !closed) {
+        button.classList.add("map-owned");
+        button.append(el("small", "", detail && !compact ? `${detail} · ${property}` : property));
+      } else if (detail) {
+        button.append(el("small", "", detail));
+      }
       if (reachable && !closed && node.id !== current) {
         // The server words every travel action from the world's ui_text, so the
         // map reuses it instead of composing its own phrases.

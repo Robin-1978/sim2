@@ -34,9 +34,19 @@
   <main id="game" tabindex="-1" class="game-grid hidden" data-screen="scene">
     <nav class="game-nav" aria-label="游戏画面">
       <button type="button" data-screen="scene" aria-controls="center-stage" aria-pressed="true">探索</button>
+      <button id="holdings-nav" class="hidden" type="button" data-screen="holdings" aria-controls="holdings-screen" aria-pressed="false">产业</button>
       <button type="button" data-screen="character" aria-controls="character-screen" aria-pressed="false">角色</button>
       <button type="button" data-screen="journal" aria-controls="journal-screen" aria-pressed="false">纪事</button>
     </nav>
+    <section id="holdings-screen" class="holdings-screen" aria-labelledby="holdings-title">
+      <header class="holdings-header panel">
+        <div><h1 id="holdings-title"></h1><p id="holdings-summary"></p></div>
+        <dl id="holdings-totals" class="venture-metrics"></dl>
+        <div id="holdings-treasury"></div>
+      </header>
+      <div id="holdings-task" class="panel holdings-task hidden" role="status"></div>
+      <div id="holdings-grid" class="holdings-grid"></div>
+    </section>
     <aside id="character-screen" class="left-rail" aria-label="角色">
       <section class="panel character-panel">
         <div class="character-head">
@@ -89,6 +99,7 @@
       <section id="venture-brief" class="panel venture-brief hidden" aria-labelledby="venture-title">
         <div><h2 id="venture-title"></h2><p id="venture-purpose"></p></div>
         <dl id="venture-metrics" class="venture-metrics"></dl>
+        <button id="open-holdings" class="text-button hidden" type="button">查看产业 →</button>
       </section>
       <section id="recap-card" class="panel recap-card hidden" aria-live="polite">
         <div class="panel-title"><div><span class="eyebrow">回来啦</span><h2 id="recap-title">最近发生</h2></div><button id="recap-dismiss" class="text-button" type="button">收起</button></div>

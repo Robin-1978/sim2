@@ -22,8 +22,13 @@ ui:
     shop_fabricate_paving: 卖出两份路石，工坊收到三枚钱
     shop_pay_dividend: 已领取一枚分红
     shop_pave_market_road: 坊市到水庭的短路开通
+    holding_hire_farm: 江遥已接下炊坊的供餐委托
+    holding_pause_farm: 炊坊已暂停接新班
   resident_actions:
     travel_to: 赶路
+    holding_serve_guest: 在玩家的驿舍吃饭休息
+    holding_manage_farm_wood: 在河滩炊坊做水庭的订单
+    holding_manage_farm_kiln: 在河滩炊坊做水庭的订单
     relief_path_first: 为农圃修第一段近路
     relief_path_finish: 为农圃打通第二段近路
     wait: 在这儿歇脚
@@ -58,6 +63,12 @@ ui:
       gatebuild.opened: 新的门线贯通
       gatebuild.agreement: 城市改签通行约定
       gatebuild.shop_road_opened: 坊市短路竣工
+      gatebuild.holding_opened: 新产业开业
+      gatebuild.holding_network: 玩家的产业改变了路线或工艺
+      gatebuild.holding_goods: 产业完成一笔交割
+      gatebuild.holding_guest: 住客在高地驿舍付费
+      gatebuild.holding_management: 炊坊委托有变动
+      gatebuild.holding_managed_sale: 江遥为炊坊结算了一班
       gatebuild.crew_table: 工人在坊市支起长桌
       gatebuild.tender_signed: 工坊签下采购合同
       gatebuild.tender_hired: 工人从旧站来到坊市
@@ -93,6 +104,12 @@ ui:
   - gatebuild.shop_batch_sold
   - gatebuild.shop_dividend
   - gatebuild.shop_road_opened
+  - gatebuild.holding_opened
+  - gatebuild.holding_network
+  - gatebuild.holding_goods
+  - gatebuild.holding_guest
+  - gatebuild.holding_management
+  - gatebuild.holding_managed_sale
   - gatebuild.crew_table
   - gatebuild.tender_signed
   - gatebuild.tender_hired
@@ -130,6 +147,80 @@ ui:
     - {label: 合同交货, property: tender_delivered, suffix: ' / 3', show_when: tender_mode}
     - {label: 准时奖还剩, property: tender_minutes, suffix: ' 分钟', show_when: tender_mode}
     - {label: 坊市待运, property: tender_yard_ready, suffix: ' 箱', show_when: tender_yard_ready}
+  holdings:
+    title: 你的产业
+    summary: 卖货、供给自己的产业，或把产出投进工程。账上每枚城币等于一百分。
+    metrics:
+    - {label: 随身, item: coin, suffix: ' 枚', decimals: 2}
+    - {label: 共同经营金, property: holding_fund, suffix: ' 枚', decimals: 2}
+    - {label: 累计营业收入, property: holding_sales, suffix: ' 枚'}
+    treasury_actions:
+    - {id: holding_reinvest, label: 存一枚进经营账}
+    - {id: holding_draw, label: 取一枚经营金}
+    plots:
+    - id: farm
+      name: 河滩炊坊
+      location: low_fields
+      opened: holding_farm
+      cost: 3
+      description: 做饭，然后决定卖给水庭、远销旧站、自己吃，或养活驿舍。
+      management:
+        property: holding_farm_managed
+        label: 江遥代管中
+        detail: 水庭缺粮时可接班。水庭付六枚并留五枚周转，井水至少十八份。每班净入三枚五十分。每次可取一枚经营金，取后须留两枚。
+      upgrade: holding_kiln
+      upgrade_label: 改炉已完成 · 一炉五份，免燃料
+      metrics:
+      - {label: 待分配饭食, property: holding_food, suffix: ' 份'}
+      - {label: 水庭公粮, property: low_food, suffix: ' 份'}
+      - {label: 水庭采购账, property: low_wages, suffix: ' 枚'}
+      - {label: 井水, property: low_water, suffix: ' 份'}
+      - {label: 途中饭食, item: holding_food_crate, suffix: ' 份', when_nonzero: true}
+      - {label: 已付代管工钱, property: holding_manager_wages, suffix: ' 枚', when_nonzero: true}
+      - {label: 代管累计净利, property: holding_manager_profit, suffix: ' 枚', when_nonzero: true}
+      build: {id: holding_open_farm, label: 开办河滩炊坊}
+      actions:
+      - {id: holding_hire_farm, label: 委托江遥经营炊坊, hide_when: holding_farm_managed}
+      - {id: holding_pause_farm, label: 暂停江遥接单, show_when: holding_farm_managed}
+      - {id: holding_cook, label: 开一炉饭}
+      - {id: holding_deliver_court, label: 卖给水庭}
+      - {id: holding_deliver_yard, label: 卖给旧站}
+      - {id: holding_deliver_inn, label: 送进自己的驿舍, show_when: holding_inn}
+      - {id: holding_take_meal, label: 领一份饭随身带}
+      - {id: holding_unpack_food, label: 把在途饭食放回炊坊, when_item: holding_food_crate}
+    - id: yard
+      name: 旧站修具台
+      location: old_station
+      opened: holding_yard
+      cost: 3
+      description: 把矿料做成修具。可以卖掉周转，可以改炉、保养货门，也可以铺一条自己用得上的新路。
+      upgrade: holding_road
+      upgrade_label: 辙道已开通 · 农圃至旧站七分钟
+      metrics:
+      - {label: 修具在库, property: holding_tools, suffix: ' 件'}
+      - {label: 旧站矿料, property: yard_ore, suffix: ' 份'}
+      - {label: 随身修具, item: holding_kit, suffix: ' 件', when_nonzero: true}
+      build: {id: holding_open_yard, label: 开办旧站修具台}
+      actions:
+      - {id: holding_forge, label: 做一件修具}
+      - {id: holding_forge_pair, label: 一炉打两件修具}
+      - {id: holding_sell_tool, label: 把修具卖给旧站}
+      - {id: holding_bridge, label: 修农圃到旧站的辙道, hide_when: holding_road}
+      - {id: holding_fit_kiln, label: 给炊坊改炉, show_when: holding_farm, hide_when: holding_kiln}
+      - {id: holding_fix_gate, label: 用修具补低城的门, show_when: market_link}
+    - id: inn
+      name: 高地驿舍
+      location: high_lodges
+      opened: holding_inn
+      cost: 2
+      description: 在路上安个落脚点。备好饭，附近的居民会自己来付钱吃饭休息。
+      metrics:
+      - {label: 柜台饭食, property: holding_guest_food, suffix: ' 份'}
+      - {label: 已接待, property: holding_guests, suffix: ' 人次'}
+      build: {id: holding_open_inn, label: 开办高地驿舍}
+      actions:
+      - {id: holding_stock_inn, label: 把随身饭留在驿舍}
+      - {id: holding_sleep, label: 在自己的驿舍歇脚}
   decision_report:
     show_when: relief_cases
     hide_when: relief_phase
@@ -172,7 +263,11 @@ ui:
       - {label: 工坊周转金, property: shop_cash, suffix: ' 枚'}
       - {label: 旧站矿料, property: yard_ore, suffix: ' 份'}
     tender_offer: {blocker: 水庭须预留十枚，旧站须有两枚工钱和十枚公共基金。查看公共账上的资金。}
-    tender_active: {blocker: 先等正在路上的居民交货。没有货时，查工坊周转金和灰脊矿仓。}
+    tender_active:
+      metrics:
+      - {label: 已验收, property: tender_delivered, suffix: ' / 3 批'}
+      - {label: 坊市矿料, property: market_ore, suffix: ' 份'}
+      - {label: 工坊周转金, property: shop_cash, suffix: ' 枚'}
     tender_final: {}
     tender_works: {}
     fix_market_yard: {}
@@ -187,4 +282,5 @@ ui:
     shop_yield: {blocker: 账上须留两枚周转金才能分红。铺路要攒够四份路石。}
     shop_roadworks: {blocker: 铺路要四份路石。可自加工一批，也可等班组交货。}
     shop_followup: {}
+    shop_contract_maintenance: {}
 ui_text: {travel_choice: '前往{name}', travel_summary: '沿当前道路前往{name}。', travel_time: '约 {minutes} 分钟', world_label: 城邦}

@@ -326,6 +326,7 @@ agents:
   ultimate_goal: 保障低价食水和诊所通行，同时尊重兑现维护承诺的人。
   initial_bt_ids:
   - routine_steward
+  - holding_manage_farm
   - visit_clinic
   - rest_short
   - train

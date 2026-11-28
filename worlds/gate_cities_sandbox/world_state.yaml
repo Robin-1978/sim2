@@ -124,3 +124,23 @@ world_state:
     relief_followups: 0
     relief_path_use: 0
     relief_path_trades: 0
+    holding_farm_plot: 1
+    holding_yard_plot: 1
+    holding_inn_plot: 1
+    holding_fund: 0
+    holding_food: 0
+    holding_tools: 0
+    holding_guest_food: 0
+    holding_inn_room: 1
+    holding_farm: 0
+    holding_yard: 0
+    holding_inn: 0
+    holding_kiln: 0
+    holding_road: 0
+    holding_sales: 0
+    holding_guests: 0
+    holding_meals_made: 0
+    holding_tools_made: 0
+    holding_farm_managed: 0
+    holding_manager_wages: 0
+    holding_manager_profit: 0

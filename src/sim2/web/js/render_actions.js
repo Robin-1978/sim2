@@ -261,7 +261,7 @@ export function renderActions() {
     for (const item of unavailable.slice(0, 12)) {
       const row = el("div", "locked-row");
       row.append(el("strong", "", item.label || item.ref || "行动"));
-      row.append(el("small", "", (item.reasons || []).map(humanizeReason).join("；") || "当前条件不满足"));
+      row.append(el("small", "", (item.reasons || []).map(humanizeReason).filter(Boolean).join("；") || "当前无法执行"));
       lockedList.append(row);
     }
   }
@@ -559,7 +559,7 @@ export function humanizeReason(reason) {
     for (const [pattern, replacement] of words) {
       if (pattern.test(text)) return text.replace(pattern, replacement);
     }
-    return text === original || /[\u4e00-\u9fff]/.test(text) ? text : "查看行动所需的地点、材料和权限";
+    return text === original || /[\u4e00-\u9fff]/.test(text) ? text : "";
   }
 
 

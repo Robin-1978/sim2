@@ -991,19 +991,7 @@ h1, h2, h3 { font-weight: 650; }
   background: linear-gradient(150deg, rgba(239, 178, 111, 0.08), rgba(9, 30, 32, 0.5));
 }
 .chapter-card.completed { opacity: 0.6; }
-.chapter-card-head { display: grid; grid-template-columns: 24px minmax(0, 1fr) auto; align-items: start; gap: 9px; }
-.goal-mark {
-  display: grid;
-  place-items: center;
-  width: 24px;
-  height: 24px;
-  border: 1px solid var(--line-strong);
-  border-radius: 8px;
-  color: var(--faint);
-  font-size: 9px;
-  font-variant-numeric: tabular-nums;
-}
-.chapter-card.ready .goal-mark { border-color: rgba(239, 178, 111, 0.45); color: var(--amber); background: var(--amber-soft); }
+.chapter-card-head { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; gap: 9px; }
 .goal-copy strong { display: block; font-size: 12px; }
 .goal-copy span { display: block; margin-top: 2px; color: var(--faint); font-size: 10px; line-height: 1.45; }
 .goal-status { padding: 3px 7px; border: 1px solid var(--line); border-radius: 999px; color: var(--muted); font-size: 9px; white-space: nowrap; }
@@ -1012,9 +1000,8 @@ h1, h2, h3 { font-weight: 650; }
 .goal-status.blocked { border-color: rgba(229, 120, 104, 0.3); color: var(--red); }
 .goal-track { height: 4px; margin: 9px 0 6px; border-radius: 999px; background: rgba(255, 255, 255, 0.06); overflow: hidden; }
 .goal-track span { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, var(--cyan), var(--amber)); }
-.goal-foot { display: flex; justify-content: space-between; gap: 10px; color: var(--muted); font-size: 9px; }
-.goal-next { color: var(--cyan); text-align: right; }
-.goal-blockers { margin-top: 7px; padding: 6px 8px; border-radius: 7px; background: rgba(229, 120, 104, 0.06); color: var(--muted); font-size: 9px; line-height: 1.5; }
+.goal-blockers { display: grid; gap: 2px; margin-top: 7px; padding: 6px 8px; border-radius: 7px; background: rgba(229, 120, 104, 0.06); color: var(--muted); font-size: 10px; line-height: 1.5; }
+.goal-blockers strong { color: var(--text); }
 .goal-do { width: 100%; margin-top: 9px; padding: 7px 10px; font-size: 10px; }
 .goal-actions { display: grid; gap: 6px; margin-top: 9px; }
 .goal-actions.choice { grid-template-columns: repeat(auto-fit, minmax(96px, 1fr)); }
@@ -2010,6 +1997,7 @@ body:has(.game-grid:not([data-screen="scene"])) .mobile-action-bar { display: no
   .venture-brief { gap: 7px; padding: 9px 12px; }
   .venture-brief p { font-size: 12px; }
   .venture-metrics { gap: 3px 11px; }
+  .center-stage > .scene-with-venture:has(> .opportunity-panel:not(.hidden)) { order: -1; }
   .scene-panel.scene-with-venture > .opportunity-panel { grid-column: 1; grid-row: 2; }
   .scene-with-venture:has(> .opportunity-panel:not(.hidden)) > .scene-art {
     grid-row: 3; min-height: clamp(150px, 22svh, 240px);
@@ -2222,3 +2210,47 @@ body:has(.game-grid:not([data-screen="scene"])) .mobile-action-bar { display: no
   .decision-desk .opportunity-panel { padding: 10px 12px; }
   .decision-desk .opportunity-panel p { font-size: 12px; }
 }
+
+.holdings-screen { display: none; }
+.game-grid[data-screen="holdings"] .holdings-screen { display: grid; gap: 12px; }
+.game-grid .holdings-header {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end;
+  gap: 9px 18px; padding: 18px 20px; border-left: 3px solid #bd9054;
+}
+.holdings-header h1 { margin: 0 0 5px; color: #f4e5c5; font: 600 clamp(26px, 3vw, 39px)/1.15 var(--serif); }
+.holdings-header p { margin: 0; color: #ccd0c3; font-size: 13px; }
+.holdings-header #holdings-treasury { grid-column: 1 / -1; }
+#holdings-treasury .holding-actions { display: flex; flex-wrap: wrap; }
+#holdings-treasury .holding-choice { flex: 0 1 250px; }
+.holdings-grid { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 12px; align-items: start; }
+.game-grid .holding-plot { border-top: 3px solid var(--plot, #b49259); padding: 17px; }
+.holding-plot[data-plot="farm"] { --plot: #8ba681; }
+.holding-plot[data-plot="yard"] { --plot: #d29766; }
+.holding-plot[data-plot="inn"] { --plot: #98aaba; }
+.holding-plot-head { position: relative; display: grid; align-items: end; grid-template-columns: 1fr auto; gap: 3px 8px; }
+.holding-place { grid-column: 1 / -1; color: var(--plot, #d1bd90); font-size: 12px; }
+.holding-plot-head h2 { color: #fff1d0; margin: 0; font: 600 clamp(22px,2.3vw,34px)/1.25 var(--serif); }
+.holding-status { font-size: 12px; color: var(--plot, #d1bd90); padding-bottom: 4px; }
+.holding-description { color: #d1d5c6; font-size: 13px; line-height: 1.5; margin: 7px 0 10px; }
+.holding-upgrade { margin: 4px 0 9px; padding: 6px 7px; background: #ede0bd12; color: #f2d9a0; font-size: 12px; }
+.holding-metrics { border-block: 1px solid #b49e7738; padding: 7px 0; margin: 0 0 10px; }
+.holding-actions { display: grid; gap: 5px; }
+.holding-choice { display: grid; gap: 3px; text-align: left; padding: 8px 10px; min-height: 38px; border: 1px solid #a98b605c; border-radius: 3px; color: #f5e7c7; background: #f7ddaa0a; cursor: pointer; }
+.holding-choice:hover:not(:disabled), .holding-choice:focus-visible { background: #f7ddaa22; border-color: #c7a16d; }
+.holding-choice:disabled { opacity: .54; cursor: default; }
+.holding-choice-copy { color: #d4d0bf; font-size: 12px; }
+.holding-choice small { color: #c6a87c; font-size: 11px; }
+.holdings-task { padding: 9px 12px; color: #e9d5ac; display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+@media (max-width: 920px) {
+  .holdings-grid { grid-template-columns: repeat(2,minmax(0,1fr)); }
+}
+@media (max-width: 645px) {
+  .holdings-grid { grid-template-columns: minmax(0,1fr); gap: 8px; }
+  .game-grid .holding-plot, .game-grid .holdings-header { padding: 10px 12px; }
+  .game-grid .holdings-header { grid-template-columns: minmax(0,1fr); }
+  .holding-description { font-size: 12px; }
+}
+.map-node.map-owned:not(.current) { border-color: #b0c69d; }
+.map-node.map-owned small, .scene-object.holding-sign { color: #d3e4bb; }
+.holding-account summary { cursor: pointer; color: #e5d0a1; font-size: 13px; }
+.holding-account[open] .holding-actions { padding-top: 7px; }

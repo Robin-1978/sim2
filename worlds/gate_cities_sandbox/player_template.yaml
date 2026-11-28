@@ -4,6 +4,27 @@ controller: manual
 inventory: {gate_core: 1, frame: 4, coin: 6, water: 2, meal: 2}
 initial_state: {home_location: high_lodges}
 initial_bt_ids:
+- holding_open_farm
+- holding_open_yard
+- holding_open_inn
+- holding_reinvest
+- holding_draw
+- holding_cook
+- holding_hire_farm
+- holding_pause_farm
+- holding_take_meal
+- holding_deliver_court
+- holding_deliver_yard
+- holding_deliver_inn
+- holding_unpack_food
+- holding_forge
+- holding_forge_pair
+- holding_sell_tool
+- holding_bridge
+- holding_fit_kiln
+- holding_fix_gate
+- holding_stock_inn
+- holding_sleep
 - relief_path_market
 - relief_path_freight
 - relief_buy_yard

@@ -6,3 +6,5 @@ agent_prompt:
     - 议约以最新的 gatebuild.agreement 事件和当前状态为准。议约 1 是共担维护，2 是公开竞争，3 是已发限行通知。只有货门限制状态为 1 才写门线已关闭。讨论或提案只能写成待决事项，新规则、居民和地点以平台的成功记录为准。
     - gatebuild.crew_table 与 gatebuild.tender_public_work 都是已完成的施工。根据世界状态继续写使用后的新矛盾，比如调水轮次或邻里争用。已经花掉的石料和已开通的工程不得写成还在等材料。引水渠竣工只表示有余水时可以补水，实际是否调水看库存或已经发生的调水记录。
     - 粮食议事从真实的 relief 结算事件继续。gatebuild.relief_charter 表示既定安排已生效，gatebuild.relief_path_open 才表示近路可走。relief_path_use 为 0 且近路可走时，下一步可以是决定沿路空地用途。引用经过校验的行动或注明哪些安排还有待提案。
+    - 对产业开业、改炉或新辙道，引用已结算的 gatebuild.holding_opened / gatebuild.holding_network 事实。沿真实的供应、客源、现金和路线提出下一项经营或社区选择。把可能的新买家写成意向，成交以交割或住宿记录为准。
+    - 炊坊代管协议与供餐回执分开核对。gatebuild.holding_management 表明委托是否生效，gatebuild.holding_managed_sale 才表示验货、发薪和净利已经入账。预算或用水紧张时，可以沿真实的居民利益提出可商议的选择。

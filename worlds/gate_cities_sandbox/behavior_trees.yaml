@@ -190,7 +190,7 @@ behavior_trees:
 - id: ship_market
   version: 1
   agent_label: 经门向低城坊市运矿
-  summary: 经门向低城坊市运矿
+  summary: 一份矿料卖一枚城币。公开竞争时，划货位需二十五分门费。
   description: 经门向低城坊市运矿
   entry_conditions:
   - actor.alive
@@ -347,7 +347,7 @@ behavior_trees:
 - id: ship_yard
   version: 1
   agent_label: 经门向铁轨货场运矿
-  summary: 经门向铁轨货场运矿
+  summary: 一份矿料卖一枚城币。公开竞争时，划货位需二十五分门费。
   description: 经门向铁轨货场运矿
   entry_conditions:
   - actor.alive
@@ -1642,6 +1642,7 @@ behavior_trees:
     children:
     - {type: behavior, behavior_id: urgent_recovery}
     - {type: behavior, behavior_id: visit_clinic}
+    - {type: behavior, behavior_id: holding_serve_guest}
     - {type: behavior, behavior_id: sip}
     - {type: behavior, behavior_id: eat}
     - {type: behavior, behavior_id: buy_needed_high_water}
@@ -1691,6 +1692,7 @@ behavior_trees:
     children:
     - {type: behavior, behavior_id: urgent_recovery}
     - {type: behavior, behavior_id: visit_clinic}
+    - {type: behavior, behavior_id: holding_serve_guest}
     - {type: behavior, behavior_id: sip}
     - {type: behavior, behavior_id: eat}
     - {type: behavior, behavior_id: buy_needed_high_water}
@@ -1737,6 +1739,7 @@ behavior_trees:
     children:
     - {type: behavior, behavior_id: urgent_recovery}
     - {type: behavior, behavior_id: visit_clinic}
+    - {type: behavior, behavior_id: holding_serve_guest}
     - {type: behavior, behavior_id: sip}
     - {type: behavior, behavior_id: eat}
     - {type: behavior, behavior_id: buy_needed_high_water}
@@ -1883,6 +1886,7 @@ behavior_trees:
     - {type: behavior, behavior_id: seek_yard_food}
     - {type: behavior, behavior_id: seek_mine_food}
     - {type: behavior, behavior_id: rest_short}
+    - {type: behavior, behavior_id: holding_manage_farm}
     - type: sequence
       children:
       - {type: condition, expression: context.day_phase == 'night' and actor.state.location_id != actor.state.home_location}
@@ -2653,6 +2657,7 @@ behavior_trees:
   - actor.alive
   - world.tender_mode > 0
   - world.tender_delivered < 3
+  - world.shop_staffed == 1
   nodes:
   - {type: wait, minutes: 60}
   cooldown_minutes: 0
@@ -2940,3 +2945,560 @@ behavior_trees:
   - {type: action, action_id: relief_path_freight, parameters: {}}
   cooldown_minutes: 0
   goal_tags: [decision]
+
+- id: holding_open_farm
+  version: 1
+  agent_label: 开办河滩炊坊
+  summary: 给地块付一枚钱，其余 2 枚记入自己的经营金。
+  description: 给地块付一枚钱，其余 2 枚记入自己的经营金。
+  entry_conditions:
+  - actor.alive
+  - world.holding_farm == 0
+  - world.holding_farm_plot >= 1
+  - world.holding_fund <= 38
+  - world.farm_till <= 119
+  nodes:
+  - type: action
+    action_id: travel_to
+    parameters:
+      location_id: low_fields
+  - type: action
+    action_id: holding_open_farm
+    parameters: {}
+  cooldown_minutes: 0
+  goal_tags: [building]
+
+- id: holding_open_yard
+  version: 1
+  agent_label: 开办旧站修具台
+  summary: 给地块付一枚钱，其余 2 枚记入自己的经营金。
+  description: 给地块付一枚钱，其余 2 枚记入自己的经营金。
+  entry_conditions:
+  - actor.alive
+  - world.holding_yard == 0
+  - world.holding_yard_plot >= 1
+  - world.holding_fund <= 38
+  - world.yard_wages <= 169
+  nodes:
+  - type: action
+    action_id: travel_to
+    parameters:
+      location_id: old_station
+  - type: action
+    action_id: holding_open_yard
+    parameters: {}
+  cooldown_minutes: 0
+  goal_tags: [building]
+
+- id: holding_open_inn
+  version: 1
+  agent_label: 开办高地驿舍
+  summary: 给地块付一枚钱，其余 1 枚记入自己的经营金。占用一个宿铺床位，可接待住客。
+  description: 给地块付一枚钱，其余 1 枚记入自己的经营金。占用一个宿铺床位，可接待住客。
+  entry_conditions:
+  - actor.alive
+  - world.holding_inn == 0
+  - world.holding_inn_plot >= 1
+  - world.holding_fund <= 39
+  - world.high_wages <= 169
+  - world.high_beds >= 1
+  nodes:
+  - type: action
+    action_id: travel_to
+    parameters:
+      location_id: high_lodges
+  - type: action
+    action_id: holding_open_inn
+    parameters: {}
+  cooldown_minutes: 0
+  goal_tags: [building]
+
+- id: holding_reinvest
+  version: 1
+  agent_label: 存一枚进经营账
+  summary: 把一枚随身钱存入三处产业共用的经营账。
+  description: 把一枚随身钱存入三处产业共用的经营账。
+  entry_conditions:
+  - actor.alive
+  - location.safe
+  - (world.holding_farm == 1 or world.holding_yard == 1 or world.holding_inn == 1)
+  - world.holding_fund < 40
+  nodes:
+  - type: action
+    action_id: holding_reinvest
+    parameters: {}
+  cooldown_minutes: 0
+  goal_tags: [trade]
+
+- id: holding_draw
+  version: 1
+  agent_label: 取一枚经营金
+  summary: 从经营账拿回一枚，账上至少保留两枚。
+  description: 从经营账拿回一枚，账上至少保留两枚。
+  entry_conditions:
+  - actor.alive
+  - location.safe
+  - (world.holding_farm == 1 or world.holding_yard == 1 or world.holding_inn == 1)
+  - world.holding_fund >= 3
+  nodes:
+  - type: action
+    action_id: holding_draw
+    parameters: {}
+  cooldown_minutes: 0
+  goal_tags: [trade]
+
+- id: holding_cook
+  version: 1
+  agent_label: 开一炉饭
+  summary: 出一枚经营金和一份水。普通炉用一份燃料做三份，改炉后免燃料可做五份。
+  description: 出一枚经营金和一份水。普通炉用一份燃料做三份，改炉后免燃料可做五份。
+  entry_conditions:
+  - actor.alive
+  - world.holding_farm == 1
+  - world.holding_fund >= 1
+  - world.low_water >= 17
+  - world.farm_till < 120
+  nodes:
+  - type: action
+    action_id: travel_to
+    parameters:
+      location_id: low_fields
+  - type: selector
+    children:
+    - type: action
+      action_id: holding_cook_1
+      parameters: {}
+    - type: action
+      action_id: holding_cook_0
+      parameters: {}
+  cooldown_minutes: 0
+  goal_tags: [craft]
+
+- id: holding_take_meal
+  version: 1
+  agent_label: 领一份饭随身带
+  summary: 从自己的炊坊库存取一份饭，放进行囊。
+  description: 从自己的炊坊库存取一份饭，放进行囊。
+  entry_conditions:
+  - actor.alive
+  - world.holding_farm == 1
+  - world.holding_food >= 1
+  nodes:
+  - type: action
+    action_id: travel_to
+    parameters:
+      location_id: low_fields
+  - type: action
+    action_id: holding_take_meal
+    parameters: {}
+  cooldown_minutes: 0
+  goal_tags: [trade]
+
+- id: holding_deliver_court
+  version: 1
+  agent_label: 卖给水庭
+  summary: 把三份饭送到水庭，结算 3 枚。
+  description: 把三份饭送到水庭，结算 3 枚。
+  entry_conditions:
+  - actor.alive
+  - world.holding_farm == 1
+  - world.low_food <= 45
+  - world.low_wages >= 3
+  - world.holding_fund <= 37
+  - (actor.inventory.holding_food_crate >= 3 or (world.holding_food >= 3 and actor.inventory.holding_food_crate == 0))
+  nodes:
+  - type: selector
+    children:
+    - type: condition
+      expression: actor.inventory.holding_food_crate >= 3
+    - type: sequence
+      children:
+      - type: action
+        action_id: travel_to
+        parameters:
+          location_id: low_fields
+      - type: action
+        action_id: holding_load_food
+        parameters: {}
+  - type: action
+    action_id: travel_to
+    parameters:
+      location_id: low_city
+  - type: action
+    action_id: holding_deliver_court
+    parameters: {}
+  cooldown_minutes: 0
+  goal_tags: [trade]
+
+- id: holding_deliver_yard
+  version: 1
+  agent_label: 卖给旧站
+  summary: 把三份饭送到旧站，结算 4 枚。
+  description: 把三份饭送到旧站，结算 4 枚。
+  entry_conditions:
+  - actor.alive
+  - world.holding_farm == 1
+  - world.yard_food <= 23
+  - world.yard_wages >= 4
+  - world.holding_fund <= 36
+  - (actor.inventory.holding_food_crate >= 3 or (world.holding_food >= 3 and actor.inventory.holding_food_crate == 0))
+  nodes:
+  - type: selector
+    children:
+    - type: condition
+      expression: actor.inventory.holding_food_crate >= 3
+    - type: sequence
+      children:
+      - type: action
+        action_id: travel_to
+        parameters:
+          location_id: low_fields
+      - type: action
+        action_id: holding_load_food
+        parameters: {}
+  - type: action
+    action_id: travel_to
+    parameters:
+      location_id: old_yard
+  - type: action
+    action_id: holding_deliver_yard
+    parameters: {}
+  cooldown_minutes: 0
+  goal_tags: [trade]
+
+- id: holding_deliver_inn
+  version: 1
+  agent_label: 送进自己的驿舍
+  summary: 把三份饭交到驿舍柜台，备给三个付费住客。
+  description: 把三份饭交到驿舍柜台，备给三个付费住客。
+  entry_conditions:
+  - actor.alive
+  - world.holding_farm == 1
+  - world.holding_guest_food <= 6
+  - world.holding_inn == 1
+  - (actor.inventory.holding_food_crate >= 3 or (world.holding_food >= 3 and actor.inventory.holding_food_crate == 0))
+  nodes:
+  - type: selector
+    children:
+    - type: condition
+      expression: actor.inventory.holding_food_crate >= 3
+    - type: sequence
+      children:
+      - type: action
+        action_id: travel_to
+        parameters:
+          location_id: low_fields
+      - type: action
+        action_id: holding_load_food
+        parameters: {}
+  - type: action
+    action_id: travel_to
+    parameters:
+      location_id: high_lodges
+  - type: action
+    action_id: holding_deliver_inn
+    parameters: {}
+  cooldown_minutes: 0
+  goal_tags: [trade]
+
+- id: holding_unpack_food
+  version: 1
+  agent_label: 把在途饭食放回炊坊
+  summary: 把三份已装的饭无损放回自己的仓。
+  description: 把三份已装的饭无损放回自己的仓。
+  entry_conditions:
+  - actor.alive
+  - actor.inventory.holding_food_crate >= 3
+  - world.holding_food <= 12
+  nodes:
+  - type: action
+    action_id: travel_to
+    parameters:
+      location_id: low_fields
+  - type: action
+    action_id: holding_unpack_food
+    parameters: {}
+  cooldown_minutes: 0
+  goal_tags: [trade]
+
+- id: holding_forge
+  version: 1
+  agent_label: 做一件修具
+  summary: 用两份旧站矿料和一枚经营金，做一件用于建设、维护或出售的修具。
+  description: 用两份旧站矿料和一枚经营金，做一件用于建设、维护或出售的修具。
+  entry_conditions:
+  - actor.alive
+  - world.holding_yard == 1
+  - world.yard_ore >= 4
+  - world.holding_fund >= 1
+  - world.holding_tools < 6
+  - world.yard_wages < 170
+  nodes:
+  - type: action
+    action_id: travel_to
+    parameters:
+      location_id: old_station
+  - type: action
+    action_id: holding_forge
+    parameters: {}
+  cooldown_minutes: 0
+  goal_tags: [craft]
+
+- id: holding_forge_pair
+  version: 1
+  agent_label: 一炉打两件修具
+  summary: 预留四份矿和两枚经营金，十二分钟做两件。
+  description: 预留四份矿和两枚经营金，十二分钟做两件。
+  entry_conditions:
+  - actor.alive
+  - world.holding_yard == 1
+  - world.yard_ore >= 6
+  - world.holding_fund >= 2
+  - world.holding_tools <= 4
+  - world.yard_wages <= 168
+  nodes:
+  - type: action
+    action_id: travel_to
+    parameters:
+      location_id: old_station
+  - type: action
+    action_id: holding_forge_pair
+    parameters: {}
+  cooldown_minutes: 0
+  goal_tags: [craft]
+
+- id: holding_sell_tool
+  version: 1
+  agent_label: 把修具卖给旧站
+  summary: 旧站用三枚薪金收一件修具。
+  description: 旧站用三枚薪金收一件修具。
+  entry_conditions:
+  - actor.alive
+  - world.holding_yard == 1
+  - world.holding_tools >= 1
+  - world.yard_wages >= 3
+  - world.holding_fund <= 37
+  nodes:
+  - type: action
+    action_id: travel_to
+    parameters:
+      location_id: old_station
+  - type: action
+    action_id: holding_sell_tool
+    parameters: {}
+  cooldown_minutes: 0
+  goal_tags: [trade]
+
+- id: holding_bridge
+  version: 1
+  agent_label: 修农圃到旧站的辙道
+  summary: 消耗两件修具，让农圃到旧站的直路只需七分钟。
+  description: 消耗两件修具，让农圃到旧站的直路只需七分钟。
+  entry_conditions:
+  - actor.alive
+  - world.holding_yard == 1
+  - world.holding_tools >= 2
+  - world.holding_road == 0
+  nodes:
+  - type: action
+    action_id: travel_to
+    parameters:
+      location_id: old_station
+  - type: action
+    action_id: holding_bridge
+    parameters: {}
+  cooldown_minutes: 0
+  goal_tags: [building]
+
+- id: holding_fit_kiln
+  version: 1
+  agent_label: 给炊坊改炉
+  summary: 花一件修具。今后一炉五份饭，免用燃料。
+  description: 花一件修具。今后一炉五份饭，免用燃料。
+  entry_conditions:
+  - actor.alive
+  - world.holding_farm == 1
+  - world.holding_kiln == 0
+  - (actor.inventory.holding_kit >= 1 or world.holding_tools >= 1)
+  nodes:
+  - type: selector
+    children:
+    - type: condition
+      expression: actor.inventory.holding_kit >= 1
+    - type: sequence
+      children:
+      - type: action
+        action_id: travel_to
+        parameters:
+          location_id: old_station
+      - type: action
+        action_id: holding_load_tool
+        parameters: {}
+  - type: action
+    action_id: travel_to
+    parameters:
+      location_id: low_fields
+  - type: action
+    action_id: holding_fit_kiln
+    parameters: {}
+  cooldown_minutes: 0
+  goal_tags: [building]
+
+- id: holding_fix_gate
+  version: 1
+  agent_label: 用修具补低城的门
+  summary: 花一件自家修具，补四格门况。
+  description: 花一件自家修具，补四格门况。
+  entry_conditions:
+  - actor.alive
+  - world.market_link == 1
+  - world.market_maintenance <= 8
+  - (actor.inventory.holding_kit >= 1 or world.holding_tools >= 1)
+  nodes:
+  - type: selector
+    children:
+    - type: condition
+      expression: actor.inventory.holding_kit >= 1
+    - type: sequence
+      children:
+      - type: action
+        action_id: travel_to
+        parameters:
+          location_id: old_station
+      - type: action
+        action_id: holding_load_tool
+        parameters: {}
+  - type: action
+    action_id: travel_to
+    parameters:
+      location_id: low_market
+  - type: action
+    action_id: holding_fix_gate
+    parameters: {}
+  cooldown_minutes: 0
+  goal_tags: [building]
+
+- id: holding_stock_inn
+  version: 1
+  agent_label: 把随身饭留在驿舍
+  summary: 把行囊的一份饭放到驿舍柜台。
+  description: 把行囊的一份饭放到驿舍柜台。
+  entry_conditions:
+  - actor.alive
+  - world.holding_inn == 1
+  - world.holding_guest_food < 9
+  nodes:
+  - type: action
+    action_id: travel_to
+    parameters:
+      location_id: high_lodges
+  - type: action
+    action_id: holding_stock_inn
+    parameters: {}
+  cooldown_minutes: 0
+  goal_tags: [trade]
+
+- id: holding_sleep
+  version: 1
+  agent_label: 在自己的驿舍歇脚
+  summary: 用一份柜台饭，恢复饱足与精力。
+  description: 用一份柜台饭，恢复饱足与精力。
+  entry_conditions:
+  - actor.alive
+  - world.holding_inn == 1
+  - world.holding_guest_food >= 1
+  nodes:
+  - type: action
+    action_id: travel_to
+    parameters:
+      location_id: high_lodges
+  - type: action
+    action_id: holding_sleep
+    parameters: {}
+  cooldown_minutes: 0
+  goal_tags: [recovery]
+
+- id: holding_serve_guest
+  version: 1
+  agent_label: 去驿舍投宿
+  summary: 从自己的钱袋付一枚，在高地驿舍吃饭休息。
+  description: 从自己的钱袋付一枚，在高地驿舍吃饭休息。
+  entry_conditions:
+  - actor.alive
+  - actor.role != 'player'
+  - actor.state.job_region == 'high'
+  - actor.inventory.coin >= 1
+  - world.holding_inn == 1
+  - world.holding_fund < 40
+  - world.holding_guest_food >= 1
+  - world.holding_inn_room >= 1
+  - (actor.need.satiety < 72 or actor.state.stamina < 70)
+  nodes:
+  - type: action
+    action_id: travel_to
+    parameters:
+      location_id: high_lodges
+  - type: action
+    action_id: holding_serve_guest
+    parameters: {}
+  cooldown_minutes: 0
+  goal_tags: []
+
+- id: holding_hire_farm
+  version: 1
+  agent_label: 委托江遥经营炊坊
+  summary: 一班为水庭备六份饭。货款六枚、原料两枚、整班工钱五十分，经营账净入三枚五十分。
+  entry_conditions:
+  - actor.alive
+  - actor.role == 'player'
+  - location.safe
+  - world.holding_farm == 1
+  - world.holding_farm_managed == 0
+  - world.holding_fund >= 2.5
+  nodes:
+  - {type: action, action_id: holding_hire_farm, parameters: {}}
+  cooldown_minutes: 0
+  goal_tags: [decision]
+
+- id: holding_pause_farm
+  version: 1
+  agent_label: 暂停江遥接单
+  summary: 暂停接新班，已备料开工的班照常结算。你可以继续亲自经营。
+  entry_conditions:
+  - actor.alive
+  - actor.role == 'player'
+  - location.safe
+  - world.holding_farm_managed == 1
+  nodes:
+  - {type: action, action_id: holding_pause_farm, parameters: {}}
+  cooldown_minutes: 0
+  goal_tags: [decision]
+
+- id: holding_manage_farm
+  version: 1
+  agent_label: 替河滩炊坊做一笔水庭订单
+  summary: 低城缺粮时备六份饭，水庭到炊坊取货。整班兑现后你领五十分，经营账净入三枚五十分。
+  entry_conditions:
+  - actor.alive
+  - actor.role == '低城议事员'
+  - actor.need.hydration >= 45
+  - actor.need.satiety >= 45
+  - actor.state.stamina >= context.work_minimum
+  - context.day_phase == 'workday'
+  - world.holding_farm == 1
+  - world.holding_farm_managed == 1
+  - world.holding_fund >= 2.5
+  - world.holding_fund <= 36.5
+  - world.low_water >= 18
+  - world.low_food <= 12
+  - world.low_wages >= 11
+  - world.farm_till <= 118
+  - (world.holding_kiln == 1 or world.field_fuel >= 2)
+  nodes:
+  - {type: action, action_id: travel_to, parameters: {location_id: low_fields}}
+  - type: selector
+    children:
+    - {type: action, action_id: holding_manage_farm_kiln, parameters: {}}
+    - {type: action, action_id: holding_manage_farm_wood, parameters: {}}
+  cooldown_minutes: 60
+  goal_tags: [craft, work]

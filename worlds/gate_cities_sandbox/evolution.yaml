@@ -28,6 +28,14 @@ director:
   - relief_path
   - relief_policy
   - relief_path_use
+  - holding_farm
+  - holding_yard
+  - holding_inn
+  - holding_road
+  - holding_farm_managed
+  - holding_manager_profit
+  - low_food
+  - low_wages
   context_events:
   - gatebuild.opened
   - gatebuild.sale
@@ -38,6 +46,10 @@ director:
   - gatebuild.embargo_notice
   - gatebuild.shop_batch_sold
   - gatebuild.shop_road_opened
+  - gatebuild.holding_opened
+  - gatebuild.holding_network
+  - gatebuild.holding_management
+  - gatebuild.holding_managed_sale
   - gatebuild.relief_charter
   - gatebuild.relief_path_open
   - gatebuild.relief_path_use
@@ -77,6 +89,9 @@ wakes:
   - gatebuild.bridge_ready
   - gatebuild.shop_batch_sold
   - gatebuild.shop_road_opened
+  - gatebuild.holding_opened
+  - gatebuild.holding_network
+  - gatebuild.holding_management
   - gatebuild.relief_charter
   - gatebuild.relief_path_open
   - gatebuild.relief_path_use

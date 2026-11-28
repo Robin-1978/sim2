@@ -9,6 +9,7 @@ import { closeLedger, openLedger, renderLedger } from "./render_ledger.js";
 import { openCreatePanel } from "./render_entry.js";
 import { closeCharacter, closePlayerSheet, nearbyParticipants, openPlayerSheet, renderFeed, renderMiniMap, renderNpcIntentions, renderPeople, renderTalkTargets, switchTab, updateCharacterSheet } from "./render_panels.js";
 import { renderCrisisStrip, renderScene } from "./render_scene.js";
+import { renderHoldings } from "./render_holdings.js";
 import { closeEnding, dismissRecap, renderEnding, renderFacilities, renderGoals, renderOnboarding, renderRecap, renderWorldProperties } from "./render_world.js";
 
 
@@ -17,6 +18,7 @@ export function renderAll() {
     renderClock();
     renderCharacter();
     renderVenture();
+    renderHoldings();
     renderScene();
     renderNpcIntentions();
     renderCrisisStrip();
@@ -50,6 +52,8 @@ export function wireUi() {
     for (const button of document.querySelectorAll(".game-nav button")) {
       button.addEventListener("click", () => showGameScreen(button.dataset.screen));
     }
+
+    $("open-holdings").addEventListener("click", () => showGameScreen("holdings"));
 
     $("hud-worlds").innerHTML = icon("globe");
     $("hud-sound").innerHTML = icon("soundOff");

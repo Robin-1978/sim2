@@ -13,7 +13,7 @@ from ..world.navigation import generic_player_travel_enabled, route_distance
 from ..world.player_template import PlayerTemplateError, parse_player_template
 from ..world.ui_text import UiText
 from .authoring import AuthoringService
-from .player_requirements import explain_requirement
+from .player_requirements import explain_requirement, player_goal_blocker
 from .scene_life import city_watch, scene_people
 from .timeline import build_timeline, chronicle_event_types
 
@@ -590,11 +590,14 @@ def build_player_view(platform: Platform, player_id: str) -> dict[str, Any]:
         and item.get("type") not in {"agent", "player"}
     ] + participants
     unavailable_actions = []
+    behavior_failures: dict[str, list[str]] = {}
     for item in (decision.get("unavailable_behavior_diagnostics") or []):
         behavior_id = str(item.get("behavior_id") or "")
         if not behavior_id or behavior_id == "travel":
             continue
         behavior = bt_defs.get(behavior_id, {})
+        reasons = [str(reason) for reason in (item.get("failed") or [])][:4]
+        behavior_failures[behavior_id] = reasons
         goal_tags = [str(tag) for tag in (behavior.get("goal_tags") or [])]
         # Keep the construction/crafting/recovery verbs visible even when a
         # world also has many gated travel and exploration choices.  A blocked
@@ -611,7 +614,7 @@ def build_player_view(platform: Platform, player_id: str) -> dict[str, Any]:
         unavailable_actions.append({
             "ref": f"behavior:{behavior_id}",
             "label": behavior.get("agent_label") or behavior.get("summary") or behavior_id,
-            "reasons": [str(reason) for reason in (item.get("failed") or [])][:4],
+            "reasons": reasons,
             "priority": priority,
         })
     unavailable_actions.sort(key=lambda row: (int(row.get("priority", 1)), str(row.get("label") or "")))
@@ -634,6 +637,16 @@ def build_player_view(platform: Platform, player_id: str) -> dict[str, Any]:
         for key, node in nodes.items()
     }
     world_properties = platform.store.repositories.metadata.get("world_properties", {}) or {}
+    inventory = decision.get("inventory") or {}
+    localize_requirements = str(setting.get("locale") or "").startswith("zh")
+    hints = rules.get("player_requirement_hints") or {}
+
+    def requirement(reason: str) -> str:
+        return explain_requirement(
+            reason, nodes, item_labels, hints, inventory=inventory,
+            world_properties=world_properties, world_labels=world_property_labels,
+        )
+
     alert_thresholds = {
         str(key): float(value)
         for key, value in (rules.get("context_values") or {}).items()
@@ -664,24 +677,49 @@ def build_player_view(platform: Platform, player_id: str) -> dict[str, Any]:
     last_action_outcome = None
     if last_result.get("status") in {"completed", "failed", "interrupted"}:
         message = str(last_result.get("result") or last_result.get("message") or "")
-        if str(setting.get("locale") or "").startswith("zh"):
-            message = explain_requirement(message, nodes, item_labels, rules.get("player_requirement_hints") or {})
+        if localize_requirements:
+            message = requirement(message)
         last_action_outcome = {"status": last_result["status"], "message": message}
     scene = platform.store.repositories.artwork.generated_for(current_id)
     if scene:
         location["artwork"] = f"/world-art/{scene}.webp"
     goals = decision.get("progression_goals", [])[:8]
-    if str(setting.get("locale") or "").startswith("zh"):
-        hints = rules.get("player_requirement_hints") or {}
+    if localize_requirements:
+        target_ids_by_goal = {
+            str(row["id"]): row.get("target_behaviors") or []
+            for row in rules.get("progression") or []
+            if isinstance(row, dict) and row.get("id")
+        }
         for goal in goals:
+            options = []
+            for behavior_id in target_ids_by_goal.get(goal["id"], []):
+                reasons = list(dict.fromkeys(
+                    message for reason in behavior_failures.get(str(behavior_id), [])
+                    if player_goal_blocker(message := requirement(reason))
+                ))
+                if reasons:
+                    definition = bt_defs.get(str(behavior_id), {})
+                    label = definition.get("agent_label") or definition.get("summary") or str(behavior_id)
+                    options.append({"label": label, "reasons": reasons})
+            goal["blocked_options"] = options
             goal["missing_requirements"] = list(dict.fromkeys(
-                explain_requirement(str(reason), nodes, item_labels, hints)
-                for reason in (goal.get("missing_requirements") or [])
-            ))
+                reason for option in options for reason in option["reasons"]
+            ))[:6]
         for action in unavailable_actions:
-            action["reasons"] = list(dict.fromkeys(
-                explain_requirement(reason, nodes, item_labels, hints) for reason in action["reasons"]
-            ))
+            action["reasons"] = list(dict.fromkeys(requirement(reason) for reason in action["reasons"]))
+    holdings = ui_settings.get("holdings") or {}
+    holding_choices = list(holdings.get("treasury_actions") or [])
+    for plot in holdings.get("plots") or []:
+        holding_choices.extend([plot.get("build") or {}, *(plot.get("actions") or [])])
+    holding_refs = {f"behavior:{choice['id']}" for choice in holding_choices if choice.get("id")}
+    goal_refs = {
+        ref for goal in goals for key in ("ready_behavior_refs", "support_behavior_refs")
+        for ref in goal.get(key, [])
+    }
+    visible_actions = actions[:64] + [row for row in actions[64:] if row["ref"] in holding_refs | goal_refs]
+    visible_unavailable = unavailable_actions[:24] + [
+        row for row in unavailable_actions[24:] if row["ref"] in holding_refs
+    ]
     return {
         "status": "ok",
         "revision": int(platform.store.repositories.metadata.get("world_revision", 0) or 0),
@@ -690,7 +728,7 @@ def build_player_view(platform: Platform, player_id: str) -> dict[str, Any]:
         "world_id": map_view.get("world_id"),
         "world_time": decision.get("world_time"),
         "player": player_projection,
-        "inventory": decision.get("inventory", {}),
+        "inventory": inventory,
         "item_labels": item_labels,
         "needs": decision.get("needs", {}),
         "capabilities": capabilities,
@@ -705,8 +743,8 @@ def build_player_view(platform: Platform, player_id: str) -> dict[str, Any]:
         "item_uses": _player_item_uses(platform),
         "active_task": active_task,
         "last_action_outcome": last_action_outcome,
-        "actions": actions[:64],
-        "unavailable_actions": unavailable_actions[:24],
+        "actions": visible_actions,
+        "unavailable_actions": visible_unavailable,
         "location": location,
         "world_properties": world_properties,
         "world_property_labels": world_property_labels,

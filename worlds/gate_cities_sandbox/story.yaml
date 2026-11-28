@@ -1,4 +1,6 @@
 emergent_source_event_types:
+- gatebuild.holding_management
+- gatebuild.holding_managed_sale
 - gatebuild.surveyed
 - gatebuild.trail_opened
 - gatebuild.bridge_ready
@@ -22,6 +24,8 @@ emergent_source_event_types:
 - gatebuild.dispatch_reserved
 - gatebuild.shop_batch_sold
 - gatebuild.shop_road_opened
+- gatebuild.holding_opened
+- gatebuild.holding_network
 - gatebuild.relief_open
 - gatebuild.relief_handout
 - gatebuild.relief_charter
@@ -45,6 +49,8 @@ context_events:
 - gatebuild.bridge_ready
 - gatebuild.shop_batch_sold
 - gatebuild.shop_road_opened
+- gatebuild.holding_opened
+- gatebuild.holding_network
 - gatebuild.relief_open
 - gatebuild.relief_handout
 - gatebuild.relief_charter
@@ -70,4 +76,15 @@ context_properties:
   tender_hired: 姚齐是否已获坊市工位（1 已获）
   tender_irrigate: 农圃引水渠已通（1 已通）
   tender_resurface: 旧站装货道已通（1 已通）
+source_context:
+  gatebuild.holding_management: &holding_management
+    events: [gatebuild.holding_management, gatebuild.holding_managed_sale, gatebuild.holding_opened, gatebuild.holding_network, gatebuild.relief_charter]
+    properties:
+      holding_farm_managed: 江遥是否受托经营炊坊（1 正在代管）
+      holding_manager_wages: 已结算的炊坊代管工钱
+      holding_manager_profit: 已结算的炊坊代管净利
+      low_food: 水庭实际公粮库存
+      low_wages: 水庭实际资金余额
+      holding_inn: 高地驿舍是否营业（1 营业）
+  gatebuild.holding_managed_sale: *holding_management
 beats: []

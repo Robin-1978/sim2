@@ -529,3 +529,44 @@ resources:
   type: resource
   location_id: low_market
   initial_state: {location_id: low_market, quantity: 1}
+
+- id: holding_farm_plot
+  name: 农圃炊坊地块
+  type: resource
+  location_id: low_fields
+  initial_state: {location_id: low_fields, quantity: 1}
+- id: holding_yard_plot
+  name: 旧站修具工位
+  type: resource
+  location_id: old_station
+  initial_state: {location_id: old_station, quantity: 1}
+- id: holding_inn_plot
+  name: 高地宿铺租位
+  type: resource
+  location_id: high_lodges
+  initial_state: {location_id: high_lodges, quantity: 1}
+- id: holding_fund
+  name: 产业经营金
+  type: resource
+  location_id: high_gate
+  initial_state: {location_id: high_gate, quantity: 0}
+- id: holding_food
+  name: 炊坊饭食
+  type: resource
+  location_id: low_fields
+  initial_state: {location_id: low_fields, quantity: 0}
+- id: holding_tools
+  name: 旧站自造修具
+  type: resource
+  location_id: old_station
+  initial_state: {location_id: old_station, quantity: 0}
+- id: holding_guest_food
+  name: 驿舍柜台饭食
+  type: resource
+  location_id: high_lodges
+  initial_state: {location_id: high_lodges, quantity: 0}
+- id: holding_inn_room
+  name: 驿舍空房
+  type: resource
+  location_id: high_lodges
+  initial_state: {location_id: high_lodges, quantity: 1}

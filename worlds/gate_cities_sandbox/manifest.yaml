@@ -1,13 +1,16 @@
 world_id: gate_cities_sandbox
 name: 诸城之门 · 建造经营版
 order: 17
-config_version: gate-cities-build-0.6
+config_version: gate-cities-build-0.7.2
 upgrade_from:
 - gate-cities-build-0.1
 - gate-cities-build-0.2
 - gate-cities-build-0.3
 - gate-cities-build-0.4
 - gate-cities-build-0.5
+- gate-cities-build-0.6
+- gate-cities-build-0.7
+- gate-cities-build-0.7.1
 time_unit: minute
 start_world_minute: 0
 random_seed: 5185

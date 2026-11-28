@@ -77,7 +77,11 @@ class StoryViewMixin:
         choices = self._story_beat_choices(story_root, story_state, source_event, observed_events, observed_facts)
         prompt_protocol, platform_rules = self._prompt_sections(role)
         known_facts = self._story_known_facts(fact_rows)
-        context_events = story_root.get("context_events")
+        source_type = str((source_event or {}).get("event_type") or "")
+        source_contexts = story_root.get("source_context")
+        source_context = source_contexts.get(source_type) if isinstance(source_contexts, dict) else None
+        source_context = source_context if isinstance(source_context, dict) else {}
+        context_events = source_context.get("events", story_root.get("context_events"))
         context_events = [kind for kind in context_events if isinstance(kind, str) and kind][:24] if isinstance(context_events, list) else []
         world = self.store.repositories.metadata.get("world_properties", {}) or {}
         return {
@@ -93,7 +97,9 @@ class StoryViewMixin:
             "audience_candidates": audience_candidates,
             "recent_actions": recent_events[:8], "recent_story_events": [item for item in recent_events if str(item.get("event_type", "")).startswith("story.")][:8],
             "recent_history": self._recent_history_view(16, event_types=context_events),
-            "story_world_state": self._story_world_state(story_root.get("context_properties"), world),
+            "story_world_state": self._story_world_state(
+                source_context.get("properties", story_root.get("context_properties")), world,
+            ),
             "active_story_threads": self._active_story_threads(),
             "season_plan": self.store.repositories.metadata.get("season_plan", {}) or {},
             "knowledge_gaps": self._knowledge_gap_view(status="active", limit=8),

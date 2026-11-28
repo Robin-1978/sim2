@@ -129,11 +129,10 @@ export function renderGoals() {
     }
     const statusNames = { ready: "可推进", needs_support: "需准备", blocked: "受阻", completed: "已完成" };
     const visibleGoals = state.goalsExpanded ? goals : goals.slice(0, 3);
-    visibleGoals.forEach((goal, index) => {
+    visibleGoals.forEach((goal) => {
       const status = String(goal.status || "blocked");
       const card = el("article", `chapter-card ${status}`);
       const head = el("div", "chapter-card-head");
-      head.append(el("span", "goal-mark", String(index + 1).padStart(2, "0")));
       const copy = el("div", "goal-copy");
       copy.append(el("strong", "", goal.label || goal.id));
       copy.append(el("span", "", goal.summary || ""));
@@ -151,23 +150,24 @@ export function renderGoals() {
         card.append(track);
       }
 
-      const foot = el("div", "goal-foot");
-      if (required > 0) foot.append(el("span", "goal-progress", `${current} / ${required}`));
-      const readyCount = (goal.ready_behavior_refs || []).length;
-      const nextLabel = readyCount <= 1
-        ? ((goal.ready_behaviors || [])[0] || (goal.support_behaviors || [])[0] || "")
-        : "";
-      if (nextLabel) foot.append(el("span", "goal-next", `${status === "ready" ? "下一步" : "先准备"}：${nextLabel}`));
-      if (foot.children.length) card.append(foot);
+      if (required > 0) card.append(el("span", "goal-progress", `${current} / ${required}`));
 
-      const requirements = (goal.missing_requirements || [])
-        .map((reason) => humanizeReason(reason))
-        .filter(Boolean);
-      if (status !== "ready" && requirements.length) {
-        card.append(el("p", "goal-blockers", `还缺：${requirements.slice(0, 2).join("；")}`));
+      if (status !== "ready") {
+        const blockers = goal.blocked_options ?? [{
+          reasons: (goal.missing_requirements || []).map(humanizeReason).filter(Boolean),
+        }];
+        const showLabels = (goal.target_behaviors || []).length > 1;
+        for (const { label, reasons } of blockers.slice(0, 2)) {
+          if (!reasons.length) continue;
+          const detail = el("p", "goal-blockers");
+          if (showLabels && label) detail.append(el("strong", "", label));
+          detail.append(el("span", "", reasons.slice(0, 3).join("。")));
+          card.append(detail);
+        }
       }
 
-      const goalActions = (goal.ready_behavior_refs || []).map(actionForRef).filter(Boolean).slice(0, 3);
+      const refs = status === "ready" ? goal.ready_behavior_refs : goal.support_behavior_refs;
+      const goalActions = (refs || []).map(actionForRef).filter(Boolean).slice(0, 3);
       if (goalActions.length) {
         const row = el("div", `goal-actions${goalActions.length > 1 ? " choice" : ""}`);
         goalActions.forEach((item, actionIndex) => {
@@ -175,9 +175,10 @@ export function renderGoals() {
           const button = el(
             "button",
             `button goal-do${actionIndex === 0 ? " primary" : " ghost"}`,
-            goalActions.length > 1 ? label : `去做：${label}`,
+            label,
           );
           button.type = "button";
+          button.disabled = Boolean(state.busy || state.view?.active_task?.bt || state.view?.active_task?.action);
           button.addEventListener("click", () => beginAction(item, button));
           row.append(button);
         });

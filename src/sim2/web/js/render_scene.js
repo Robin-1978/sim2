@@ -103,6 +103,13 @@ export function renderScene() {
       objects.append(chip);
     }
 
+    for (const plot of view.ui?.holdings?.plots || []) {
+      if (plot.location !== location.id || !properties[plot.opened]) continue;
+      const sign = el("div", "scene-object holding-sign");
+      sign.append(el("i"), el("span", "", `${plot.name} · 你的产业`));
+      objects.prepend(sign);
+    }
+
     const people = $("scene-people");
     const street = $("street-life");
     const watch = view.city_watch;

@@ -9,6 +9,7 @@ from urllib.parse import urlsplit
 import pytest
 
 from sim2.api.http import ControlHTTPServer
+from sim2.api.runtime_supervisor import RuntimeSupervisor
 from sim2.api.service import ControlService
 from sim2.bootstrap.service import create_instance
 
@@ -388,3 +389,81 @@ def test_saved_player_renews_before_protected_reads_after_server_restart(tmp_pat
             assert protected and set(protected) == {200}
     finally:
         page.close()
+
+
+def test_holdings_open_from_normal_nav_and_appear_on_the_map(tmp_path, browser):
+    database = create_instance(WORLDS / "gate_cities_sandbox", "web-holdings", tmp_path)
+    with closing(ControlService(database)) as service:
+        assert service.enter_player("hero", "builder", "旅人")["status"] == "accepted"
+        store = service.platform.store
+        with store.transaction():
+            player = store.repositories.entities.get_agent("hero")
+            player["initial_state"]["location_id"] = "low_fields"
+            store.repositories.entities.update_agent("hero", player)
+    with server_url(tmp_path, database) as url:
+        page = browser.new_page(viewport={"width": 390, "height": 844}, is_mobile=True)
+        try:
+            page.goto(url)
+            page.get_by_role("button", name="继续 旅人").first.click(timeout=20000)
+            tab = page.get_by_role("button", name="产业", exact=True)
+            tab.click(timeout=20000)
+            panel = page.locator("#holdings-screen")
+            plot = panel.locator('[data-plot="farm"]')
+            for title in ("开办河滩炊坊", "开办旧站修具台", "开办高地驿舍"):
+                pw.expect(panel.get_by_role("button", name=title)).to_be_enabled()
+            plot.get_by_role("button", name="开办河滩炊坊").click()
+            pw.expect(plot.get_by_text("经营中")).to_be_visible(timeout=30000)
+            plot.get_by_role("button", name="开一炉饭").click()
+            pw.expect(plot.locator(".holding-metrics")).to_contain_text("3 份", timeout=30000)
+            pw.expect(panel.locator("#holdings-treasury details")).not_to_have_attribute("open", "")
+            hire = plot.get_by_role("button", name="委托江遥经营炊坊")
+            pw.expect(hire).to_be_disabled()
+            pw.expect(hire).to_contain_text("两枚五十分")
+            panel.get_by_text("存取经营金", exact=True).click()
+            deposit = panel.get_by_role("button", name="存一枚进经营账")
+            for _ in range(2):
+                deposit.click()
+                pw.expect(deposit).to_be_enabled(timeout=30000)
+            pw.expect(hire).to_be_enabled()
+            hire.click()
+            pw.expect(plot).to_contain_text("江遥代管中", timeout=30000)
+            pw.expect(plot.get_by_role("button", name="暂停江遥接单")).to_be_enabled()
+            page.get_by_role("button", name="探索", exact=True).click()
+            pw.expect(page.locator("#scene-objects")).to_contain_text("河滩炊坊 · 你的产业")
+            page.locator("#open-map").click()
+            pw.expect(page.locator("#map-canvas .map-owned")).to_contain_text("河滩炊坊")
+        finally:
+            page.close()
+
+
+def test_north_bridge_goal_shows_the_shortage_and_starts_preparation(tmp_path, browser):
+    database = create_instance(WORLDS / "gate_cities_sandbox", "web-bridge-preparation", tmp_path)
+    with closing(ControlService(database)) as service:
+        assert service.enter_player("hero", "builder", "旅人")["status"] == "accepted"
+        result = service.player_act({"player_id": "hero", "behavior_ref": "behavior:survey_bridge"})
+        assert result["status"] == "accepted", result
+        RuntimeSupervisor(service).advance_manual(60, until_actor_idle="hero")
+        assert service.player_view("hero")["world_properties"]["bridge_surveyed"] == 1
+        store = service.platform.store
+        with store.transaction():
+            player = store.repositories.entities.get_agent("hero")
+            player["inventory"].update(frame=0, metal=2)
+            player["initial_state"]["location_id"] = "high_gate"
+            store.repositories.entities.update_agent("hero", player)
+
+    with server_url(tmp_path, database) as url:
+        page = browser.new_page(viewport={"width": 390, "height": 844}, is_mobile=True)
+        try:
+            page.goto(url)
+            page.get_by_role("button", name="继续 旅人").first.click(timeout=20000)
+            goals = page.locator("#goal-list")
+            bridge = goals.locator(".chapter-card").filter(has_text="让北栈桥能走重货")
+            pw.expect(bridge).to_contain_text("框架件还差 2（现有 0 / 需要 2）")
+            bridge.get_by_role("button", name="制作三份框架件").click()
+            pw.expect(bridge.get_by_role("button", name="加固北栈桥货路")).to_be_enabled(timeout=30000)
+            pw.expect(bridge).not_to_contain_text("框架件还差")
+            bridge.get_by_role("button", name="加固北栈桥货路").click()
+            pw.expect(bridge).to_have_count(0, timeout=30000)
+            assert page.evaluate("async () => (await import('/js/core.js')).state.view.world_properties.bridge_improved") == 1
+        finally:
+            page.close()
